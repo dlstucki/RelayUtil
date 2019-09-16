@@ -16,7 +16,7 @@ namespace RelayUtil.WcfRelays
 
     class WcfRelayCommands
     {
-        const string DefaultPath = "RelayUtilWcfListener";
+        const string DefaultPath = "RelayUtilWcf";
             
         internal static void ConfigureCommands(CommandLineApplication app)
         {
@@ -48,14 +48,10 @@ namespace RelayUtil.WcfRelays
                 var pathArgument = createCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = createCmd.Argument("connectionString", "Relay ConnectionString");
 
-                //var bindingOption = createCmd.Option(
-                //    "-t|--relaytype <relaytype>",
-                //    "TODO",
-                //    CommandOptionType.SingleValue);
-                //var clientAuthRequiredOption = createCmd.Option(
-                //     "-car|--client-auth-required <clientAuthRequired>",
-                //     "Whether Client Authentication is required",
-                //     CommandOptionType.SingleValue);
+                var relayTypeOption = createCmd.Option(
+                    "-t|--relaytype <relaytype>", "The RelayType (nettcp|http|netevent|netoneway)", CommandOptionType.SingleValue);
+                var requireClientAuthOption = createCmd.Option(
+                    CommandStrings.RequiresClientAuthTemplate, CommandStrings.RequiresClientAuthDescription, CommandOptionType.SingleValue);
 
                 createCmd.OnExecute(async () =>
                 {
@@ -68,7 +64,8 @@ namespace RelayUtil.WcfRelays
 
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
                     wcfCommand.Out.WriteLine($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host}...");
-                    var relayDescription = new RelayDescription(pathArgument.Value, RelayType.NetTcp) { RequiresClientAuthorization = true, RequiresTransportSecurity = true };
+                    var relayDescription = new RelayDescription(pathArgument.Value, GetRelayType(relayTypeOption));
+                    relayDescription.RequiresClientAuthorization = GetRequiresClientAuthorization(requireClientAuthOption);
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     await namespaceManager.CreateRelayAsync(relayDescription);
                     wcfCommand.Out.WriteLine($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
@@ -98,10 +95,12 @@ namespace RelayUtil.WcfRelays
                     wcfCommand.Out.WriteLine($"Listing WcfRelays for {connectionStringBuilder.Endpoints.First().Host}");
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     IEnumerable<RelayDescription> relays = await namespaceManager.GetRelaysAsync();
+                    wcfCommand.Out.WriteLine($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20} RelayType");
                     foreach (var relay in relays)
                     {
-                        wcfCommand.Out.WriteLine($"Path:{relay.Path}\tListenerCount:{relay.ListenerCount}\tRelayType:{relay.RelayType}\tRequiresClientAuthorization:{relay.RequiresClientAuthorization}");
+                        wcfCommand.Out.WriteLine($"{relay.Path,-38} {relay.ListenerCount,-15} {relay.RequiresClientAuthorization,-20} {relay.RelayType}");
                     }
+
                     return 0;
                 });
             });
@@ -151,7 +150,7 @@ namespace RelayUtil.WcfRelays
 
                 var connectivityModeOption = listenCmd.Option(
                     CommandStrings.ConnectivityModeTemplate,
-                    "The ConnectivityMode (auto|tcp|http)",
+                    CommandStrings.ConnectivityModeDescription,
                     CommandOptionType.SingleValue);
 
                 listenCmd.OnExecute(() =>
@@ -164,15 +163,15 @@ namespace RelayUtil.WcfRelays
                         return 1;
                     }
 
-                    var binding = new NetTcpRelayBinding();
+                    Binding binding = GetBinding(bindingOption);
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     if (namespaceManager.RelayExists(path))
                     {
-                        binding.IsDynamic = false;
-                        wcfCommand.Out.WriteLine("RelayExists!");
+                        dynamic dynamicBinding = binding;
+                        dynamicBinding.IsDynamic = false;
                     }
 
-                    return VerifyListen(wcfCommand.Out, connectionString, path, binding, ConnectivityMode.Tcp);
+                    return VerifyListen(wcfCommand.Out, connectionString, path, binding, GetConnectivityMode(connectivityModeOption));
                 });
             });
         }
@@ -198,7 +197,7 @@ namespace RelayUtil.WcfRelays
 
                 var connectivityModeOption = sendCmd.Option(
                     CommandStrings.ConnectivityModeTemplate,
-                    "The ConnectivityMode (auto|tcp|http)",
+                    CommandStrings.ConnectivityModeDescription,
                     CommandOptionType.SingleValue);
 
                 sendCmd.OnExecute(() =>
@@ -213,14 +212,16 @@ namespace RelayUtil.WcfRelays
 
                     int number = int.Parse(numberOption.Value() ?? "1");
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    return VerifySend(wcfCommand.Out, connectionStringBuilder.Endpoints.First().Host, path, number, new NetTcpRelayBinding(), ConnectivityMode.Tcp, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
+                    Binding binding = GetBinding(bindingOption);
+                    ConnectivityMode connectivityMode = GetConnectivityMode(connectivityModeOption);
+                    return VerifySend(wcfCommand.Out, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
                 });
             });
         }
 
         public static int VerifyListen(TextWriter output, string connectionString, string path, Binding binding, ConnectivityMode connectivityMode)
         {
-            output.Write("Establish Connection to relay service....");
+            output.WriteLine($"Open relay listener using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
             ServiceHost serviceHost = null;
             try
             {
@@ -238,12 +239,11 @@ namespace RelayUtil.WcfRelays
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 serviceHost.Open();
-                output.WriteLine("Connection established.");
-                output.WriteLine("Relay service \"" + endpoint.Address.Uri + "\" is listening");
-                output.WriteLine("Press press <ENTER> to close the listener ");
+                output.WriteLine("Relay listener \"" + endpoint.Address.Uri + "\" is open");
+                output.WriteLine("Press <ENTER> to close the listener ");
                 Console.ReadLine();
 
-                output.Write("Closing Connection...");
+                output.WriteLine("Closing Connection...");
                 serviceHost.Close();
                 output.WriteLine("Closed");
                 return 0;
@@ -257,7 +257,7 @@ namespace RelayUtil.WcfRelays
 
         public static int VerifySend(TextWriter output, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
         {
-            output.Write("Establish Connection to relay service....");
+            output.WriteLine($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
             ChannelFactory<IEcho> channelFactory = null;
             IEcho channel = null;
             try
@@ -272,16 +272,20 @@ namespace RelayUtil.WcfRelays
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
                 channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 channel = channelFactory.CreateChannel();
+                output.WriteLine($"Opening channel");
                 ((IChannel)channel).Open();
                 for (int i = 0; i < number; i++)
                 {
-                    output.WriteLine($"Invoking Relay service \"{channelFactory.Endpoint.Address.Uri}\"");
                     string response = channel.Echo("Request from sender");
-                    output.WriteLine($"Response:\t{response}");
+                    output.WriteLine($"Response: {response}");
                 }
 
+                output.WriteLine($"Closing channel");
                 ((IChannel)channel).Close();
                 channelFactory.Close();
+                output.WriteLine($"Closed");
+
+                return 0;
             }
             catch (Exception)
             {
@@ -289,8 +293,79 @@ namespace RelayUtil.WcfRelays
                 channelFactory?.Abort();
                 throw;
             }
+        }
 
-            return 0;
+        static Binding GetBinding(CommandOption bindingOption)
+        {
+            string bindingString = bindingOption.HasValue() ? bindingOption.Value() : "nettcprelaybinding";
+
+            // Make a few friendly aliases
+            switch (bindingString.ToLowerInvariant())
+            {
+                case "basichttp":
+                case "basichttprelay":
+                case "basichttprelaybinding":
+                    return new BasicHttpRelayBinding();
+                case "tcp":
+                case "nettcp":
+                case "nettcprelay":
+                case "nettcprelaybinding":
+                    return new NetTcpRelayBinding();
+                case "ws2007":
+                case "wshttp":
+                case "ws2007httprelay":
+                case "wshttprelay":
+                case "wshttprelaybinding":
+                case "ws2007httprelaybinding":
+                    return new WS2007HttpRelayBinding();
+                default:
+                    throw new ArgumentException("Unknown binding type: " + bindingString, "binding");
+
+                // TODO: Needs more work:
+                ////case "web":
+                ////case "webhttp":
+                ////case "webhttprelay":
+                ////case "webhttprelaybinding":
+                ////    return new WebHttpRelayBinding();
+            }
+        }
+
+        static ConnectivityMode GetConnectivityMode(CommandOption connectivityModeOption)
+        {
+            string modeString = connectivityModeOption.HasValue() ? connectivityModeOption.Value() : "AutoDetect";
+
+            // Make a few friendly aliases
+            switch (modeString.ToLowerInvariant())
+            {
+                case "h":
+                    modeString = "https";
+                    break;
+                case "t":
+                    modeString = "tcp";
+                    break;
+                case "a":
+                case "auto":
+                    modeString = "autodetect";
+                    break;
+            }
+
+            return (ConnectivityMode)Enum.Parse(typeof(ConnectivityMode), modeString, ignoreCase: true);
+        }
+
+        static RelayType GetRelayType(CommandOption relayTypeOption)
+        {
+            string typeString = relayTypeOption.HasValue() ? relayTypeOption.Value() : "NetTcp";
+            return (RelayType)Enum.Parse(typeof(RelayType), typeString, ignoreCase: true);
+        }
+
+        static bool GetRequiresClientAuthorization(CommandOption requireClientAuthOption)
+        {
+            if (requireClientAuthOption.HasValue())
+            {
+                return bool.Parse(requireClientAuthOption.Value());
+            }
+
+            return true;
         }
 
         [ServiceContract]
@@ -300,11 +375,12 @@ namespace RelayUtil.WcfRelays
             string Echo(string message);
         }
 
+        [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, ConcurrencyMode = ConcurrencyMode.Multiple)]
         public class WcfEchoService : IEcho
         {
             public string Echo(string message)
             {
-                Console.WriteLine($"{this.GetType().Name}.{nameof(Echo)}({message}) invoked.");
+                Console.WriteLine($"Request:  {message}");
                 return "Response from Listener";
             }
         }

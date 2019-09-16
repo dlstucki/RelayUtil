@@ -36,7 +36,7 @@ namespace RelayUtil.HybridConnections
                 }
 
                 listener = new HybridConnectionListener(connectionString.ToString());
-                Console.WriteLine($"Opening Listener {listener}");
+                Console.WriteLine($"Opening {listener}");
                 await listener.OpenAsync(cts.Token);
                 Console.WriteLine("Listener Opened");
 
@@ -68,7 +68,7 @@ namespace RelayUtil.HybridConnections
                 {
                     if (listener != null)
                     {
-                        Console.WriteLine("Closing Listener");
+                        Console.WriteLine($"Closing {listener}");
                         await listener.CloseAsync(cleanupCancelSource.Token);
                     }
 
@@ -93,7 +93,7 @@ namespace RelayUtil.HybridConnections
 
         static async Task GetSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client)
         {
-            ColorConsole.WriteLine(ConsoleColor.White, "==========\r\nTesting GET small response (over control connection)\r\n==========");
+            ColorConsole.WriteLine(ConsoleColor.White, "========== Testing GET small response (over control connection) ==========");
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context);
@@ -110,13 +110,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response);
                 response.EnsureSuccessStatusCode();
-                ColorConsole.WriteLine(ConsoleColor.White, "Success\r\n");
+                ColorConsole.WriteLine(ConsoleColor.White, "Success");
             }
         }
 
         static async Task GetLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client)
         {
-            ColorConsole.WriteLine(ConsoleColor.White, "==========\r\nTesting GET large response (over rendezvous)\r\n==========");
+            ColorConsole.WriteLine(ConsoleColor.White, "========== Testing GET large response (over rendezvous) ==========");
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context);
@@ -132,13 +132,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response);
                 response.EnsureSuccessStatusCode();
-                ColorConsole.WriteLine(ConsoleColor.White, "Success\r\n");
+                ColorConsole.WriteLine(ConsoleColor.White, "Success");
             }
         }
 
         static async Task PostLargeRequestSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client)
         {
-            ColorConsole.WriteLine(ConsoleColor.White, "==========\r\nTesting POST large request with small response (over rendezvous)\r\n==========");
+            ColorConsole.WriteLine(ConsoleColor.White, "========== Testing POST large request with small response (over rendezvous) ==========");
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context);
@@ -155,13 +155,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response);
                 response.EnsureSuccessStatusCode();
-                ColorConsole.WriteLine(ConsoleColor.White, "Success\r\n");
+                ColorConsole.WriteLine(ConsoleColor.White, "Success");
             }
         }
 
         static async Task PostLargeRequestWithLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client)
         {
-            ColorConsole.WriteLine(ConsoleColor.White, "==========\r\nTesting POST large request with large response (over rendezvous)\r\n==========");
+            ColorConsole.WriteLine(ConsoleColor.White, "========== Testing POST large request with large response (over rendezvous) ==========");
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context);
@@ -178,18 +178,17 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response);
                 response.EnsureSuccessStatusCode();
-                ColorConsole.WriteLine(ConsoleColor.White, "Success\r\n");
+                ColorConsole.WriteLine(ConsoleColor.White, "Success");
             }
         }
 
-        static void LogHttpRequest(RelayedHttpListenerContext context)
+        internal static void LogHttpRequest(RelayedHttpListenerContext context)
         {
-            Console.Write("Listener.RequestHandler invoked:");
-            Console.WriteLine($"{context.Request.HttpMethod} {context.Request.Url} ({new StreamReader(context.Request.InputStream).ReadToEnd().Length} bytes)");
-            Console.Write($"({context})");
+            Console.Write("Request:  ");
+            Console.WriteLine($"{context.Request.HttpMethod} {context.Request.Url} ({new StreamReader(context.Request.InputStream).ReadToEnd().Length} bytes, {context.TrackingContext.TrackingId})");
         }
 
-        public static void LogHttpResponse(HttpResponseMessage httpResponse, bool showBody = false)
+        internal static void LogHttpResponse(HttpResponseMessage httpResponse)
         {
             var foregroundColor = Console.ForegroundColor;
             if (!httpResponse.IsSuccessStatusCode)
@@ -197,8 +196,7 @@ namespace RelayUtil.HybridConnections
                 foregroundColor = ConsoleColor.Yellow;
             }
 
-            ColorConsole.Write(foregroundColor, "Received Response:");
-            ColorConsole.Write(foregroundColor, $"HTTP/{httpResponse.Version} {(int)httpResponse.StatusCode} {httpResponse.ReasonPhrase} ");
+            ColorConsole.Write(foregroundColor, $"Response: HTTP/{httpResponse.Version} {(int)httpResponse.StatusCode} {httpResponse.ReasonPhrase} ");
             ColorConsole.WriteLine(foregroundColor, $"({httpResponse.Content?.ReadAsStreamAsync().Result.Length ?? 0} bytes)");
         }
     }

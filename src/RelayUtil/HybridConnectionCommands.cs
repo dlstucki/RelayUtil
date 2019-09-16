@@ -5,6 +5,10 @@ namespace RelayUtil
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
+    using System.Net;
+    using System.Text;
+    using System.Threading.Tasks;
     using Microsoft.Azure.Relay;
     using Microsoft.Azure.Relay.Management;
     using Microsoft.Extensions.CommandLineUtils;
@@ -12,7 +16,7 @@ namespace RelayUtil
 
     static class HybridConnectionCommands
     {
-        internal const string DefaultPath = "RelayUtilHcListener";
+        internal const string DefaultPath = "RelayUtilHc";
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
@@ -45,10 +49,8 @@ namespace RelayUtil
                 var pathArgument = createCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = createCmd.Argument("connectionString", "Relay ConnectionString");
 
-                //var clientAuthRequiredOption = createCmd.Option(
-                //     "-car|--client-auth-required <clientAuthRequired>",
-                //     "Whether Client Authentication is required",
-                //     CommandOptionType.SingleValue);
+                var requireClientAuthOption = createCmd.Option(
+                    CommandStrings.RequiresClientAuthTemplate, CommandStrings.RequiresClientAuthDescription, CommandOptionType.SingleValue);
 
                 createCmd.OnExecute(async () =>
                 {
@@ -61,7 +63,8 @@ namespace RelayUtil
 
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     hcCommand.Out.WriteLine($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host}...");
-                    var hcDescription = new HybridConnectionDescription(pathArgument.Value) { RequiresClientAuthorization = true };
+                    var hcDescription = new HybridConnectionDescription(pathArgument.Value);
+                    hcDescription.RequiresClientAuthorization = GetRequiresClientAuthorization(requireClientAuthOption);
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     await namespaceManager.CreateHybridConnectionAsync(hcDescription);
                     hcCommand.Out.WriteLine($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
@@ -89,12 +92,14 @@ namespace RelayUtil
 
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     hcCommand.Out.WriteLine($"Listing HybridConnections for {connectionStringBuilder.Endpoint.Host}");
+                    hcCommand.Out.WriteLine($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20}");
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     IEnumerable<HybridConnectionDescription> hybridConnections = await namespaceManager.GetHybridConnectionsAsync();
                     foreach (var hybridConnection in hybridConnections)
                     {
-                        hcCommand.Out.WriteLine($"Path:{hybridConnection.Path}\tListenerCount:{hybridConnection.ListenerCount}\tRequiresClientAuthorization:{hybridConnection.RequiresClientAuthorization}");
+                        hcCommand.Out.WriteLine($"{hybridConnection.Path,-38} {hybridConnection.ListenerCount,-15} {hybridConnection.RequiresClientAuthorization}");
                     }
+
                     return 0;
                 });
             });
@@ -136,18 +141,20 @@ namespace RelayUtil
                 listenCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = listenCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
+                var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
 
-                listenCmd.OnExecute(() =>
+                listenCmd.OnExecute(async () =>
                 {
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     string path = pathArgument.Value ?? DefaultPath;
+                    string response = responseOption?.Value() ?? "<html><head><title>Azure Relay HybridConnection</title></head><body>Response Body from Listener</body></html>";
                     if (string.IsNullOrEmpty(connectionString))
                     {
                         listenCmd.ShowHelp();
                         return 1;
                     }
 
-                    return VerifyListen(connectionString, path);
+                    return await VerifyListenAsync(hcCommand.Out, new RelayConnectionStringBuilder(connectionString), path, response);
                 });
             });
         }
@@ -204,14 +211,96 @@ namespace RelayUtil
             });
         }
 
-        public static int VerifyListen(string connectionString, string path)
+        public static async Task<int> VerifyListenAsync(TextWriter output, RelayConnectionStringBuilder connectionString, string path, string response)
+        {
+            bool createdHybridConnection = false;
+            if (string.IsNullOrEmpty(connectionString.EntityPath))
+            {
+                connectionString.EntityPath = path ?? DefaultPath;
+
+                var namespaceManager = new RelayNamespaceManager(connectionString.ToString());
+                if (!await namespaceManager.HybridConnectionExistsAsync(connectionString.EntityPath))
+                {
+                    output.WriteLine($"Creating HybridConnection {connectionString.EntityPath}...");
+                    createdHybridConnection = true;
+                    await namespaceManager.CreateHybridConnectionAsync(new HybridConnectionDescription(connectionString.EntityPath));
+                    output.WriteLine("Created");
+                }
+            }
+
+            HybridConnectionListener listener = null;
+            try
+            {
+                listener = new HybridConnectionListener(connectionString.ToString());
+                listener.Connecting += (s, e) => ColorConsole.WriteLine(ConsoleColor.Yellow, $"Listener attempting to connect. Last Error: {listener.LastError}");
+                listener.Online += (s, e) => ColorConsole.WriteLine(ConsoleColor.Green, "Listener is online");
+                EventHandler offlineHandler = (s, e) => ColorConsole.WriteLine(ConsoleColor.Red, $"Listener is OFFLINE. Last Error: {listener.LastError}");
+                listener.Offline += offlineHandler;
+
+                var responseBytes = Encoding.UTF8.GetBytes(response);
+                listener.RequestHandler = async (context) =>
+                {
+                    try
+                    {
+                        HybridConnectionTests.LogHttpRequest(context);
+                        context.Response.Headers[HttpResponseHeader.ContentType] = "text/html";
+                        await context.Response.OutputStream.WriteAsync(responseBytes, 0, responseBytes.Length);
+                        await context.Response.CloseAsync();
+                    }
+                    catch (Exception exception)
+                    {
+                        ColorConsole.WriteLine(ConsoleColor.Red, $"RequestHandler Error: {exception.GetType()}: {exception.Message}");
+                    }
+                };
+
+                Console.WriteLine($"Opening {listener}");
+                await listener.OpenAsync();
+                output.WriteLine("Press <ENTER> to close the listener ");
+                Console.ReadLine();
+
+                output.WriteLine($"Closing {listener}");
+                listener.Offline -= offlineHandler; // Avoid a spurious trace on expected shutdown.
+                await listener.CloseAsync();
+                output.WriteLine("Closed");
+                return 0;
+            }
+            catch (Exception)
+            {
+                listener?.CloseAsync();
+                throw;
+            }
+            finally
+            {
+                if (createdHybridConnection)
+                {
+                    try
+                    {
+                        output.WriteLine($"Deleting HybridConnection {connectionString.EntityPath}...");
+                        var namespaceManager = new RelayNamespaceManager(connectionString.ToString());
+                        await namespaceManager.DeleteHybridConnectionAsync(connectionString.EntityPath);
+                        output.WriteLine($"Deleted");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+        }
+
+        static int VerifySend(string connectionString, string path, int number)
         {
             throw new NotImplementedException();
         }
 
-        public static int VerifySend(string connectionString, string path, int number)
+        static bool GetRequiresClientAuthorization(CommandOption requireClientAuthOption)
         {
-            throw new NotImplementedException();
+            if (requireClientAuthOption.HasValue())
+            {
+                return bool.Parse(requireClientAuthOption.Value());
+            }
+
+            return true;
         }
+
     }
 }
