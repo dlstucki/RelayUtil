@@ -6,6 +6,7 @@ namespace RelayUtil.Diagnostics
 {
     using System;
     using System.Collections.Generic;
+    using System.IO;
     using System.Net;
     using System.Net.Sockets;
     using System.Text;
@@ -18,51 +19,47 @@ namespace RelayUtil.Diagnostics
             80, 443, 5671, 9350, 9351, 9352, 9353, 9354
         };
 
-        public static async Task<string> VerifyRelayPortsAsync(string hostName)
+        public static async Task VerifyRelayPortsAsync(string hostName, TextWriter output)
         {
-            var stringBuilder = new StringBuilder();
-            stringBuilder.AppendLine("*****************************************************************************************");
-            stringBuilder.Append($"Checking {hostName} ");
+            output.Write($"Checking {hostName} ");
             try
             {
                 IPHostEntry ipHostEntry = await Dns.GetHostEntryAsync(hostName);
-                stringBuilder.AppendLine($"({ipHostEntry.AddressList[0]})");
-                var tasks = new List<Tuple<int, Task>>();
+                output.WriteLine($"({ipHostEntry.AddressList[0]})");
+                var tasks = new List<Tuple<IPEndPoint, Task>>();
                 foreach (int port in RelayPorts)
                 {
-                    tasks.Add(new Tuple<int, Task>(port, ProbeTcpPortAsync(ipHostEntry, port)));
+                    var ipEndpoint = new IPEndPoint(ipHostEntry.AddressList[0], port);
+                    tasks.Add(new Tuple<IPEndPoint, Task>(ipEndpoint, ProbeTcpPortAsync(ipEndpoint, port)));
                 }
 
-                foreach (Tuple<int, Task> item in tasks)
+                foreach (Tuple<IPEndPoint, Task> item in tasks)
                 {
-                    int port = item.Item1;
+                    IPEndPoint ipEndpoint = item.Item1;
                     Task task = item.Item2;
                     try
                     {
                         await task;
-                        stringBuilder.AppendLine($"Port: {port} succeeded");
+                        output.WriteLine($"{ipEndpoint} succeeded");
                     }
                     catch (Exception ex)
                     {
-                        stringBuilder.AppendLine($"ERROR: Port: {port} FAILED {ex.GetType().Name}: {ex.Message}");
+                        output.WriteLine($"ERROR: {ipEndpoint} FAILED {ex.GetType().Name}: {ex.Message}");
                     }
                 }
             }
             catch (Exception e)
             {
-                stringBuilder.AppendLine("\r\nERROR: Exception:" + e);
+                output.WriteLine("ERROR: Exception:" + e);
             }
-
-            return stringBuilder.ToString();
         }
 
-        public static async Task ProbeTcpPortAsync(IPHostEntry ipHostEntry, int port)
+        public static async Task ProbeTcpPortAsync(IPEndPoint ipEndPoint, int port)
         {
-            var myLocalEndPoint = new IPEndPoint(ipHostEntry.AddressList[0], port);
-            using (var socket = new Socket(myLocalEndPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp))
+            using (var socket = new Socket(ipEndPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp))
             {
                 await Task.Factory.FromAsync(
-                    (c, s) => socket.BeginConnect(myLocalEndPoint, c, s),
+                    (c, s) => socket.BeginConnect(ipEndPoint, c, s),
                     (a) => socket.EndConnect(a),
                     socket);
             }
