@@ -6,6 +6,7 @@ namespace RelayUtil.Diagnostics
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Net;
     using System.Net.Sockets;
@@ -26,26 +27,17 @@ namespace RelayUtil.Diagnostics
             {
                 IPHostEntry ipHostEntry = await Dns.GetHostEntryAsync(hostName);
                 output.WriteLine($"({ipHostEntry.AddressList[0]})");
-                var tasks = new List<Tuple<IPEndPoint, Task>>();
+                var tasks = new List<Task<string>>();
                 foreach (int port in RelayPorts)
                 {
                     var ipEndpoint = new IPEndPoint(ipHostEntry.AddressList[0], port);
-                    tasks.Add(new Tuple<IPEndPoint, Task>(ipEndpoint, ProbeTcpPortAsync(ipEndpoint, port)));
+                    tasks.Add(ProbeTcpPortAsync(ipEndpoint));
                 }
 
-                foreach (Tuple<IPEndPoint, Task> item in tasks)
+                foreach (Task<string> task in tasks)
                 {
-                    IPEndPoint ipEndpoint = item.Item1;
-                    Task task = item.Item2;
-                    try
-                    {
-                        await task;
-                        output.WriteLine($"{ipEndpoint} succeeded");
-                    }
-                    catch (Exception ex)
-                    {
-                        output.WriteLine($"ERROR: {ipEndpoint} FAILED {ex.GetType().Name}: {ex.Message}");
-                    }
+                    string result = await task;
+                    output.WriteLine(result);
                 }
             }
             catch (Exception e)
@@ -54,14 +46,24 @@ namespace RelayUtil.Diagnostics
             }
         }
 
-        public static async Task ProbeTcpPortAsync(IPEndPoint ipEndPoint, int port)
+        public static async Task<string> ProbeTcpPortAsync(IPEndPoint ipEndPoint)
         {
             using (var socket = new Socket(ipEndPoint.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp))
             {
-                await Task.Factory.FromAsync(
-                    (c, s) => socket.BeginConnect(ipEndPoint, c, s),
-                    (a) => socket.EndConnect(a),
-                    socket);
+                var stopwatch = Stopwatch.StartNew();
+                try
+                {
+                    await Task.Factory.FromAsync(
+                        (c, s) => socket.BeginConnect(ipEndPoint, c, s),
+                        (a) => socket.EndConnect(a),
+                        socket);
+                    stopwatch.Stop();
+                    return $"{ipEndPoint} succeeded in {stopwatch.ElapsedMilliseconds} ms";
+                }
+                catch (Exception ex)
+                {
+                    return $"ERROR: {ipEndPoint} FAILED in {stopwatch.ElapsedMilliseconds} ms. {ex.GetType().Name}: {ex.Message}";
+                }
             }
         }
     }

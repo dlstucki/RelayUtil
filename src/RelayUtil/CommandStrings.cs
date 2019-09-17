@@ -7,10 +7,11 @@ namespace RelayUtil
     {
         public const string HelpTemplate = "-?|-h|--help";
         public const string NamespaceTemplate = "-ns|--namespace <namespace>";
-        public const string ConnectionStringTemplate = "-cs|--connection-string <string>";
         public const string ConnectivityModeTemplate = "-cm|--connectivity-mode <mode>";
         public const string ConnectivityModeDescription = "The ConnectivityMode (auto|tcp|https)";
         public const string RequiresClientAuthTemplate = "-rca|--requires-client-auth <requiresClientAuth>";
         public const string RequiresClientAuthDescription = "Whether client authorization is required (true|false)";
+        public const string NumberTemplate = "-n|--number <number>";
+        public const string NumberDescription = "The Number of messages to send";
     }
 }

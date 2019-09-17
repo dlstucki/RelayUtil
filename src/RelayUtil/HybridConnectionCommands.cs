@@ -165,13 +165,11 @@ namespace RelayUtil
             {
                 sendCmd.Description = "HybridConnection send command";
                 sendCmd.HelpOption(CommandStrings.HelpTemplate);
+
                 var pathArgument = sendCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
-                var numberOption = sendCmd.Option(
-                    "-n|--number <number>",
-                    "The Number of messages to send",
-                    CommandOptionType.SingleValue);
+                var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
 
                 sendCmd.OnExecute(() =>
                 {

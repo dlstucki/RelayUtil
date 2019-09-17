@@ -5,6 +5,7 @@ namespace RelayUtil.WcfRelays
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.ServiceModel;
@@ -17,7 +18,9 @@ namespace RelayUtil.WcfRelays
     class WcfRelayCommands
     {
         const string DefaultPath = "RelayUtilWcf";
-            
+        private const string BindingOptionTemplate = "-b|--binding <binding>";
+        private const string BindingOptionDescription = "The Wcf Binding. (NetTcpRelayBinding|BasicHttpRelayBinding)";
+
         internal static void ConfigureCommands(CommandLineApplication app)
         {
             app.Command("wcf", (wcfCommand) =>
@@ -49,7 +52,7 @@ namespace RelayUtil.WcfRelays
                 var connectionStringArgument = createCmd.Argument("connectionString", "Relay ConnectionString");
 
                 var relayTypeOption = createCmd.Option(
-                    "-t|--relaytype <relaytype>", "The RelayType (nettcp|http|netevent|netoneway)", CommandOptionType.SingleValue);
+                    "-t|--relaytype <relaytype>", "The RelayType (nettcp|http)", CommandOptionType.SingleValue);
                 var requireClientAuthOption = createCmd.Option(
                     CommandStrings.RequiresClientAuthTemplate, CommandStrings.RequiresClientAuthDescription, CommandOptionType.SingleValue);
 
@@ -140,18 +143,13 @@ namespace RelayUtil.WcfRelays
             {
                 listenCmd.Description = "WcfRelay listen command";
                 listenCmd.HelpOption(CommandStrings.HelpTemplate);
+
                 var pathArgument = listenCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
 
-                var bindingOption = listenCmd.Option(
-                    "-b|--binding <binding>",
-                    "The Wcf Binding. (NetTcpRelayBinding|BasicHttpRelayBinding)",
-                    CommandOptionType.SingleValue);
-
-                var connectivityModeOption = listenCmd.Option(
-                    CommandStrings.ConnectivityModeTemplate,
-                    CommandStrings.ConnectivityModeDescription,
-                    CommandOptionType.SingleValue);
+                var bindingOption = listenCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
+                var connectivityModeOption = listenCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
+                var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
 
                 listenCmd.OnExecute(() =>
                 {
@@ -171,7 +169,7 @@ namespace RelayUtil.WcfRelays
                         dynamicBinding.IsDynamic = false;
                     }
 
-                    return VerifyListen(wcfCommand.Out, connectionString, path, binding, GetConnectivityMode(connectivityModeOption));
+                    return VerifyListen(wcfCommand.Out, connectionString, path, binding, GetConnectivityMode(connectivityModeOption), responseOption.Value());
                 });
             });
         }
@@ -185,25 +183,19 @@ namespace RelayUtil.WcfRelays
                 var pathArgument = sendCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
-                var numberOption = sendCmd.Option(
-                    "-n|--number <number>",
-                    "The Number of messages to send",
-                    CommandOptionType.SingleValue);
+                var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
 
-                var bindingOption = sendCmd.Option(
-                    "-b|--binding <binding>",
-                    "The Wcf Binding. (NetTcpRelayBinding|BasicHttpRelayBinding)",
-                    CommandOptionType.SingleValue);
+                var bindingOption = sendCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
 
-                var connectivityModeOption = sendCmd.Option(
-                    CommandStrings.ConnectivityModeTemplate,
-                    CommandStrings.ConnectivityModeDescription,
-                    CommandOptionType.SingleValue);
+                var connectivityModeOption = sendCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
+
+                var requestOption = sendCmd.Option("--request <request>", "The request to send", CommandOptionType.SingleValue);
 
                 sendCmd.OnExecute(() =>
                 {
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     string path = pathArgument.Value ?? DefaultPath;
+                    string request = requestOption.Value() ?? "Test Message Data";
                     if (string.IsNullOrEmpty(connectionString))
                     {
                         sendCmd.ShowHelp();
@@ -214,12 +206,12 @@ namespace RelayUtil.WcfRelays
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
                     Binding binding = GetBinding(bindingOption);
                     ConnectivityMode connectivityMode = GetConnectivityMode(connectivityModeOption);
-                    return VerifySend(wcfCommand.Out, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
+                    return VerifySend(wcfCommand.Out, request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
                 });
             });
         }
 
-        public static int VerifyListen(TextWriter output, string connectionString, string path, Binding binding, ConnectivityMode connectivityMode)
+        public static int VerifyListen(TextWriter output, string connectionString, string path, Binding binding, ConnectivityMode connectivityMode, string response)
         {
             output.WriteLine($"Open relay listener using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
             ServiceHost serviceHost = null;
@@ -235,7 +227,7 @@ namespace RelayUtil.WcfRelays
                 }
 
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
-                serviceHost = new ServiceHost(typeof(WcfEchoService));
+                serviceHost = new ServiceHost(new WcfEchoService(response));
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 serviceHost.Open();
@@ -255,11 +247,11 @@ namespace RelayUtil.WcfRelays
             }
         }
 
-        public static int VerifySend(TextWriter output, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
+        public static int VerifySend(TextWriter output, string request, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
         {
             output.WriteLine($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
-            ChannelFactory<IEcho> channelFactory = null;
-            IEcho channel = null;
+            ChannelFactory<IEchoClient> channelFactory = null;
+            IEchoClient channel = null;
             try
             {
                 if (relayNamespace.Contains("."))
@@ -268,20 +260,25 @@ namespace RelayUtil.WcfRelays
                 }
 
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
-                channelFactory = new ChannelFactory<IEcho>(binding, new EndpointAddress(ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path)));
+                channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path)));
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
                 channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 channel = channelFactory.CreateChannel();
                 output.WriteLine($"Opening channel");
-                ((IChannel)channel).Open();
+                var stopwatch = Stopwatch.StartNew();
+                channel.Open();
+                stopwatch.Stop();
+                output.WriteLine($"Opened channel in {stopwatch.ElapsedMilliseconds} ms");
+
                 for (int i = 0; i < number; i++)
                 {
-                    string response = channel.Echo("Request from sender");
-                    output.WriteLine($"Response: {response}");
+                    stopwatch.Restart();
+                    string response = channel.Echo(DateTime.UtcNow, request);
+                    output.WriteLine($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
                 }
 
                 output.WriteLine($"Closing channel");
-                ((IChannel)channel).Close();
+                channel.Close();
                 channelFactory.Close();
                 output.WriteLine($"Closed");
 
@@ -289,7 +286,7 @@ namespace RelayUtil.WcfRelays
             }
             catch (Exception)
             {
-                ((IChannel)channel)?.Abort();
+                channel?.Abort();
                 channelFactory?.Abort();
                 throw;
             }
@@ -369,19 +366,28 @@ namespace RelayUtil.WcfRelays
         }
 
         [ServiceContract]
-        public interface IEcho
+        interface IEcho
         {
             [OperationContract]
-            string Echo(string message);
+            string Echo(DateTime startTime, string message);
         }
 
+        interface IEchoClient : IEcho, IClientChannel { }
+
         [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, ConcurrencyMode = ConcurrencyMode.Multiple)]
-        public class WcfEchoService : IEcho
+        sealed class WcfEchoService : IEcho
         {
-            public string Echo(string message)
+            readonly string response;
+
+            public WcfEchoService(string response)
             {
-                Console.WriteLine($"Request:  {message}");
-                return "Response from Listener";
+                this.response = response;
+            }
+
+            public string Echo(DateTime startTime, string message)
+            {
+                Console.WriteLine($"Request: {message} ({(int)DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms from start)");
+                return this.response ?? message;
             }
         }
     }

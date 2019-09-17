@@ -12,13 +12,18 @@ namespace RelayUtil
 
         internal static string ResolveConnectionString(CommandArgument connectionStringArgument)
         {
+            string actualConnectionString = string.Empty;
             if (!string.IsNullOrEmpty(connectionStringArgument.Value))
             {
-                return connectionStringArgument.Value;
+                actualConnectionString = connectionStringArgument.Value;
             }
 
-            string environmentConnectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariableName);
-            return environmentConnectionString;
+            if (string.IsNullOrEmpty(actualConnectionString))
+            {
+                actualConnectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariableName);
+            }
+
+            return actualConnectionString;
         }
     }
 }
