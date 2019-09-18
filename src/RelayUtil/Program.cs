@@ -6,12 +6,24 @@ namespace RelayUtil
     using System;
     using System.IO;
     using System.Linq;
+    using System.Runtime.CompilerServices;
     using Microsoft.Extensions.CommandLineUtils;
+    using RelayUtil.Utilities;
     using RelayUtil.WcfRelays;
 
     class Program
     {
         static int Main(string[] args)
+        {
+            // Unpack other DLLs we need.
+            SupportFiles.UnpackResourcesIfNeeded();
+
+            // Don't add any new DLL dependencies in this Main method. Put them inside MainCore or lower and use the SupportFiles approach.
+            return MainCore(args);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static int MainCore(string[] args)
         {
             var app = new CommandLineApplication();
             app.Name = nameof(RelayUtil);
