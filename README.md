@@ -39,4 +39,19 @@ Commands:
   send    HybridConnection send command
   test    HybridConnection tests
 
+
+C:\> RelayUtil.exe diag -?
+
+Usage: RelayUtil diag [arguments] [options]
+Arguments:
+  namespaceOrConnectionString  Relay Namespace or ConnectionString
+Options:
+  -?|-h|--help                          Show help information
+  -a|--all                              Show all details
+  -n|-ns|--namespace                    Show namespace details
+  --netstat                             Show netstat output
+  -p|--ports                            Probe Relay Ports
+  -ip|--instance-ports <instanceCount>  Probe Relay Instance Level Ports
+  -o|--os                               Display Platform/OS/.NET information
+
 ```
