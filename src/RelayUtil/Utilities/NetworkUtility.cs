@@ -10,6 +10,7 @@ namespace RelayUtil
     using System.IO;
     using System.Net;
     using System.Net.Sockets;
+    using System.Text;
     using System.Threading.Tasks;
 
     class NetworkUtility
@@ -19,13 +20,14 @@ namespace RelayUtil
             80, 443, 5671, 9350, 9351, 9352, 9353, 9354
         };
 
-        public static async Task VerifyRelayPortsAsync(string hostName, TextWriter output)
+        public static async Task<string> VerifyRelayPortsAsync(string hostName, TextWriter output)
         {
-            output.Write($"Checking {hostName} ");
+            var stringBuilder = new StringBuilder();
+            stringBuilder.Append($"Checking {hostName} ");
             try
             {
                 IPHostEntry ipHostEntry = await Dns.GetHostEntryAsync(hostName);
-                output.WriteLine($"({ipHostEntry.AddressList[0]})");
+                stringBuilder.AppendLine($"({ipHostEntry.AddressList[0]})");
                 var tasks = new List<Task<string>>();
                 foreach (int port in RelayPorts)
                 {
@@ -36,13 +38,15 @@ namespace RelayUtil
                 foreach (Task<string> task in tasks)
                 {
                     string result = await task;
-                    output.WriteLine(result);
+                    stringBuilder.AppendLine(result);
                 }
             }
             catch (Exception e)
             {
-                output.WriteLine("ERROR: Exception:" + e);
+                stringBuilder.AppendLine("ERROR: Exception:" + e);
             }
+
+            return stringBuilder.ToString();
         }
 
         public static async Task<string> ProbeTcpPortAsync(IPEndPoint ipEndPoint)
@@ -61,7 +65,7 @@ namespace RelayUtil
                 }
                 catch (Exception ex)
                 {
-                    return $"ERROR: {ipEndPoint} FAILED in {stopwatch.ElapsedMilliseconds} ms. {ex.GetType().Name}: {ex.Message}";
+                    return $"{ipEndPoint} FAILED in {stopwatch.ElapsedMilliseconds} ms. {ex.GetType().Name}: {ex.Message}";
                 }
             }
         }

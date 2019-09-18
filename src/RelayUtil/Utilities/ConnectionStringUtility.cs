@@ -4,11 +4,15 @@
 namespace RelayUtil
 {
     using System;
+    using System.Text.RegularExpressions;
     using Microsoft.Extensions.CommandLineUtils;
 
     class ConnectionStringUtility
     {
-        const string ConnectionStringEnvironmentVariableName = "azure-relay-dotnet/connectionstring";
+        const string DotNetTestsConnectionStringEnvironmentVariableName = "azure-relay-dotnet/connectionstring";
+        const string JavaTestsConnectionStringEnvironmentVariableName = "RELAY_CONNECTION_STRING";
+        
+        static readonly Regex ConnectionStringRegex = new Regex(@"[\w]*Endpoint=(http|https|sb)://", RegexOptions.IgnoreCase);
 
         internal static string ResolveConnectionString(CommandArgument connectionStringArgument)
         {
@@ -17,17 +21,28 @@ namespace RelayUtil
             {
                 connectionString = connectionStringArgument.Value;
             }
-            else
+
+            if (string.IsNullOrEmpty(connectionString))
             {
-                connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariableName);
+                connectionString = Environment.GetEnvironmentVariable(DotNetTestsConnectionStringEnvironmentVariableName);
             }
 
-            if (!string.IsNullOrEmpty(connectionString) && connectionString.IndexOf("Endpoint=", StringComparison.OrdinalIgnoreCase) < 0)
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                connectionString = Environment.GetEnvironmentVariable(JavaTestsConnectionStringEnvironmentVariableName);
+            }
+
+            if (!string.IsNullOrEmpty(connectionString) && !IsConnectionString(connectionString))
             {
                 connectionString = "Endpoint=http://" + connectionString;
             }
 
             return connectionString;
+        }
+
+        internal static bool IsConnectionString(string connectionString)
+        {
+            return !string.IsNullOrEmpty(connectionString) && ConnectionStringRegex.IsMatch(connectionString);
         }
     }
 }

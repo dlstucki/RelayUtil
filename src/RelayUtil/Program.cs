@@ -66,7 +66,7 @@ namespace RelayUtil
             }
             else
             {
-                output.WriteLine($"{exception.GetType().Name}: {exception.Message}");
+                output.WriteLine($"*** {exception.GetType().Name}: {exception.Message} ***");
             }
         }
     }
