@@ -4,6 +4,8 @@
 namespace RelayUtil
 {
     using System;
+    using System.Collections;
+    using System.Collections.Generic;
     using System.Diagnostics;
     using System.Globalization;
     using System.Linq;
@@ -12,7 +14,7 @@ namespace RelayUtil
     using Microsoft.Azure.Relay;
     using Microsoft.Extensions.CommandLineUtils;
     using Microsoft.ServiceBus;
-    using RelayUtil.Diagnostics;
+    using RelayUtil.Utilities;
 
     class DiagnosticCommands
     {
@@ -27,8 +29,13 @@ namespace RelayUtil
                 diagCommand.HelpOption(CommandStrings.HelpTemplate);
                 var connectionStringArgument = diagCommand.Argument("connectionString", "Relay Namespace ConnectionString");
 
+                CommandOption namespaceOption = diagCommand.Option(
+                    "-n|-ns|--namespace",
+                    "Show namespace details",
+                    CommandOptionType.NoValue);
+
                 CommandOption netStatOption = diagCommand.Option(
-                    "-ns|--netstat",
+                    "--netstat",
                     "Show netstat output",
                     CommandOptionType.NoValue);
 
@@ -45,7 +52,14 @@ namespace RelayUtil
                 diagCommand.OnExecute(async () =>
                 {
                     bool runAll = !diagCommand.Options.Any(o => o.HasValue());
+
+                    NamespaceDetails namespaceDetails = default;
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument); // Might not be present
+                    if (!string.IsNullOrEmpty(connectionString))
+                    {
+                        var connectionStringBuilder = connectionString != null ? new RelayConnectionStringBuilder(connectionString) : null;
+                        namespaceDetails = await NamespaceUtility.GetNamespaceDetailsAsync(connectionStringBuilder.Endpoint.Host);
+                    }
 
                     if (runAll || netStatOption.HasValue())
                     {
@@ -54,12 +68,17 @@ namespace RelayUtil
 
                     if (runAll || portsOption.HasValue())
                     {
-                        await ExecutePortsCommandAsync(diagCommand, connectionString);
+                        await ExecutePortsCommandAsync(diagCommand, namespaceDetails);
                     }
 
                     if (runAll || osOption.HasValue())
                     {
-                        await ExecutePlatformCommandAsync(diagCommand, connectionString);
+                        await ExecutePlatformCommandAsync(diagCommand, namespaceDetails);
+                    }
+
+                    if (runAll || namespaceOption.HasValue())
+                    {
+                        ExecuteNamespaceCommand(diagCommand, namespaceDetails);
                     }
 
                     return 0;
@@ -67,17 +86,36 @@ namespace RelayUtil
             });
         }
 
-        static async Task ExecutePortsCommandAsync(CommandLineApplication app, string connectionString)
+        static async Task ExecutePortsCommandAsync(CommandLineApplication app, NamespaceDetails namespaceDetails)
         {
             app.Out.WriteLine(CommandSeparatorLine);
-            if (!string.IsNullOrEmpty(connectionString))
+            if (!string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
-                var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                await NetworkUtility.VerifyRelayPortsAsync(connectionStringBuilder.Endpoints.First().Host, app.Out);
+                await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.ServiceNamespace, app.Out);
 
                 // TODO: Build the ILPIP DNS name and run it for G0 through G63
-                ////await NetworkUtility.VerifyRelayPortsAsync("g0-prod-by3-003-sb.servicebus.windows.net", app.Out);
+                ////await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.GatewayDnsFormat, app.Out);
             }
+        }
+
+        static void ExecuteNamespaceCommand(CommandLineApplication app, NamespaceDetails namespaceDetails)
+        {
+            const string OutputFormat = "{0,-27}{1}";
+
+            void OutputLineIf(bool condition, string name, string value)
+            {
+                if (condition)
+                {
+                    app.Out.WriteLine(OutputFormat, name + ":", value);
+                }
+            }
+
+            app.Out.WriteLine(CommandSeparatorLine);
+            OutputLineIf(!string.IsNullOrEmpty(namespaceDetails.ServiceNamespace), "ServiceNamespace", namespaceDetails.ServiceNamespace);
+            OutputLineIf(namespaceDetails.AddressList?.Length > 0, "Address(VIP)", string.Join(",", (IEnumerable<IPAddress>)namespaceDetails.AddressList));
+            OutputLineIf(!string.IsNullOrEmpty(namespaceDetails.Deployment), "Deployment", namespaceDetails.Deployment);
+            OutputLineIf(!string.IsNullOrEmpty(namespaceDetails.HostName), "HostName", namespaceDetails.HostName);
+            OutputLineIf(!string.IsNullOrEmpty(namespaceDetails.GatewayDnsFormat), "GatewayDnsFormat", namespaceDetails.GatewayDnsFormat);
         }
 
         static void ExecuteNetStatCommand(CommandLineApplication app)
@@ -85,16 +123,9 @@ namespace RelayUtil
             app.Out.WriteLine(CommandSeparatorLine);
             ExecuteProcess(
                 "netstat.exe",
-                "-ano",
+                "-ano -p tcp",
                 TimeSpan.FromSeconds(30),
-                (s, e) =>
-                {
-                    // Skip UDP stuff
-                    if (!string.IsNullOrEmpty(e.Data) && !e.Data.Contains(" UDP "))
-                    {
-                        app.Out.WriteLine("[netstat] " + e.Data);
-                    }
-                },
+                (s, e) => app.Out.WriteLine(e.Data),
                 (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
@@ -105,7 +136,7 @@ namespace RelayUtil
                 throwOnNonZero: true);
         }
 
-        static async Task ExecutePlatformCommandAsync(CommandLineApplication app, string connectionString)
+        static async Task ExecutePlatformCommandAsync(CommandLineApplication app, NamespaceDetails namespaceDetails)
         {
             app.Out.WriteLine(CommandSeparatorLine);
             const string OutputFormat = "{0,-27}{1}";
@@ -116,10 +147,9 @@ namespace RelayUtil
             app.Out.WriteLine(OutputFormat, "mscorlib Assembly Version:", typeof(object).Assembly.GetName().Version);
             app.Out.WriteLine(OutputFormat, "mscorlib File Version:", FileVersionInfo.GetVersionInfo(typeof(object).Assembly.Location).FileVersion);
 
-            if (connectionString != null)
+            if (!string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
-                var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
-                var webRequest = WebRequest.CreateHttp(new Uri($"https://{connectionStringBuilder.Endpoint.Host}"));
+                var webRequest = WebRequest.CreateHttp(new Uri($"https://{namespaceDetails.ServiceNamespace}"));
                 webRequest.Method = "GET";
                 using (var response = await webRequest.GetResponseAsync())
                 {

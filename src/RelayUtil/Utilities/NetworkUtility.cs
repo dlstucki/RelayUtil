@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 
-namespace RelayUtil.Diagnostics
+namespace RelayUtil
 {
     using System;
     using System.Collections.Generic;
@@ -10,7 +10,6 @@ namespace RelayUtil.Diagnostics
     using System.IO;
     using System.Net;
     using System.Net.Sockets;
-    using System.Text;
     using System.Threading.Tasks;
 
     class NetworkUtility

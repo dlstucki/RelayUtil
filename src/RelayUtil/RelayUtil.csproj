@@ -69,13 +69,14 @@
   <ItemGroup>
     <Compile Include="ColorConsole.cs" />
     <Compile Include="CommandStrings.cs" />
-    <Compile Include="ConnectionStringUtility.cs" />
+    <Compile Include="Utilities\ConnectionStringUtility.cs" />
     <Compile Include="DiagnosticCommands.cs" />
     <Compile Include="HybridConnectionCommands.cs" />
-    <Compile Include="Diagnostics\NetworkUtility.cs" />
+    <Compile Include="Utilities\NetworkUtility.cs" />
     <Compile Include="HybridConnections\HybridConnectionTests.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Utilities\NamespaceUtility.cs" />
     <Compile Include="Utilities\SupportFiles.cs" />
     <Compile Include="WcfRelayCommands.cs" />
   </ItemGroup>
@@ -112,5 +113,6 @@
       <Visible>False</Visible>
     </EmbeddedResource>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
