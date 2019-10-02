@@ -184,12 +184,9 @@ namespace RelayUtil.WcfRelays
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
                 var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
-
                 var bindingOption = sendCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
-
                 var connectivityModeOption = sendCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
-
-                var requestOption = sendCmd.Option("--request <request>", "The request to send", CommandOptionType.SingleValue);
+                var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
 
                 sendCmd.OnExecute(() =>
                 {

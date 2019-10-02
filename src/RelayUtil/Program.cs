@@ -29,7 +29,7 @@ namespace RelayUtil
             app.Name = nameof(RelayUtil);
             app.Description = "Azure Relay Utility Commands";
             app.HelpOption(CommandStrings.HelpTemplate);
-            app.Option("-v|--verbose", "Verbose output", CommandOptionType.NoValue);
+            app.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
             try
             {

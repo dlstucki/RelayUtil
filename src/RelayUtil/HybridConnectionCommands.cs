@@ -5,10 +5,8 @@ namespace RelayUtil
 {
     using System;
     using System.Collections.Generic;
-    using System.IO;
     using System.Net;
     using System.Text;
-    using System.Threading.Tasks;
     using Microsoft.Azure.Relay;
     using Microsoft.Azure.Relay.Management;
     using Microsoft.Extensions.CommandLineUtils;
@@ -141,20 +139,28 @@ namespace RelayUtil
                 listenCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = listenCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
+
                 var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
+                var responseLengthOption = listenCmd.Option("--response-length <responseLength>", "Length of response to return", CommandOptionType.SingleValue);
+                var statusCodeOption = listenCmd.Option("--status-code <statusCode>", "The HTTP Status Code to return (200|201|401|404|etc.)", CommandOptionType.SingleValue);
+                var statusDescriptionOption = listenCmd.Option("--status-description <statusDescription>", "The HTTP Status Description to return", CommandOptionType.SingleValue);
+                var verboseOption = listenCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
                 listenCmd.OnExecute(async () =>
                 {
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
-                    string path = pathArgument.Value ?? DefaultPath;
-                    string response = responseOption?.Value() ?? "<html><head><title>Azure Relay HybridConnection</title></head><body>Response Body from Listener</body></html>";
                     if (string.IsNullOrEmpty(connectionString))
                     {
                         listenCmd.ShowHelp();
                         return 1;
                     }
 
-                    return await VerifyListenAsync(hcCommand.Out, new RelayConnectionStringBuilder(connectionString), path, response);
+                    string response = GetMessageBody(responseOption, responseLengthOption, "<html><head><title>Azure Relay HybridConnection</title></head><body>Response Body from Listener</body></html>");
+                    var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
+                    connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
+                    bool verbose = verboseOption.HasValue() ? true : false;
+                    var statusCode = (HttpStatusCode)int.Parse(statusCodeOption.Value() ?? "200");
+                    return await HybridConnectionTests.VerifyListenAsync(hcCommand.Out, connectionStringBuilder, response, statusCode, statusDescriptionOption.Value(), verbose);
                 });
             });
         }
@@ -170,19 +176,29 @@ namespace RelayUtil
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
                 var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
+                var methodOption = sendCmd.Option("-m|--method <method>", "The HTTP Method (GET|POST|PUT|DELETE)", CommandOptionType.SingleValue);
+                var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
+                var requestLengthOption = sendCmd.Option(CommandStrings.RequestLengthTemplate, CommandStrings.RequestLengthDescription, CommandOptionType.SingleValue);
+                var verboseOption = sendCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
-                sendCmd.OnExecute(() =>
+                sendCmd.OnExecute(async () =>
                 {
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
-                    string path = pathArgument.Value ?? DefaultPath;
                     if (string.IsNullOrEmpty(connectionString))
                     {
                         sendCmd.ShowHelp();
                         return 1;
                     }
 
+                    var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
+                    connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
+
                     int number = int.Parse(numberOption.Value() ?? "1");
-                    return VerifySend(connectionString, path, number);
+                    string method = methodOption.Value() ?? "GET";
+                    string requestContent = GetMessageBody(requestOption, requestLengthOption, null);
+                    bool verbose = verboseOption.HasValue() ? true : false;
+                    await HybridConnectionTests.VerifySendAsync(connectionStringBuilder, number, method, requestContent, verbose);
+                    return 0;
                 });
             });
         }
@@ -209,87 +225,6 @@ namespace RelayUtil
             });
         }
 
-        public static async Task<int> VerifyListenAsync(TextWriter output, RelayConnectionStringBuilder connectionString, string path, string response)
-        {
-            bool createdHybridConnection = false;
-            if (string.IsNullOrEmpty(connectionString.EntityPath))
-            {
-                connectionString.EntityPath = path ?? DefaultPath;
-
-                var namespaceManager = new RelayNamespaceManager(connectionString.ToString());
-                if (!await namespaceManager.HybridConnectionExistsAsync(connectionString.EntityPath))
-                {
-                    output.WriteLine($"Creating HybridConnection {connectionString.EntityPath}...");
-                    createdHybridConnection = true;
-                    await namespaceManager.CreateHybridConnectionAsync(new HybridConnectionDescription(connectionString.EntityPath));
-                    output.WriteLine("Created");
-                }
-            }
-
-            HybridConnectionListener listener = null;
-            try
-            {
-                listener = new HybridConnectionListener(connectionString.ToString());
-                listener.Connecting += (s, e) => ColorConsole.WriteLine(ConsoleColor.Yellow, $"Listener attempting to connect. Last Error: {listener.LastError}");
-                listener.Online += (s, e) => ColorConsole.WriteLine(ConsoleColor.Green, "Listener is online");
-                EventHandler offlineHandler = (s, e) => ColorConsole.WriteLine(ConsoleColor.Red, $"Listener is OFFLINE. Last Error: {listener.LastError}");
-                listener.Offline += offlineHandler;
-
-                var responseBytes = Encoding.UTF8.GetBytes(response);
-                listener.RequestHandler = async (context) =>
-                {
-                    try
-                    {
-                        HybridConnectionTests.LogHttpRequest(context);
-                        context.Response.Headers[HttpResponseHeader.ContentType] = "text/html";
-                        await context.Response.OutputStream.WriteAsync(responseBytes, 0, responseBytes.Length);
-                        await context.Response.CloseAsync();
-                    }
-                    catch (Exception exception)
-                    {
-                        ColorConsole.WriteLine(ConsoleColor.Red, $"RequestHandler Error: {exception.GetType()}: {exception.Message}");
-                    }
-                };
-
-                Console.WriteLine($"Opening {listener}");
-                await listener.OpenAsync();
-                output.WriteLine("Press <ENTER> to close the listener ");
-                Console.ReadLine();
-
-                output.WriteLine($"Closing {listener}");
-                listener.Offline -= offlineHandler; // Avoid a spurious trace on expected shutdown.
-                await listener.CloseAsync();
-                output.WriteLine("Closed");
-                return 0;
-            }
-            catch (Exception)
-            {
-                listener?.CloseAsync();
-                throw;
-            }
-            finally
-            {
-                if (createdHybridConnection)
-                {
-                    try
-                    {
-                        output.WriteLine($"Deleting HybridConnection {connectionString.EntityPath}...");
-                        var namespaceManager = new RelayNamespaceManager(connectionString.ToString());
-                        await namespaceManager.DeleteHybridConnectionAsync(connectionString.EntityPath);
-                        output.WriteLine($"Deleted");
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-        }
-
-        static int VerifySend(string connectionString, string path, int number)
-        {
-            throw new NotImplementedException();
-        }
-
         static bool GetRequiresClientAuthorization(CommandOption requireClientAuthOption)
         {
             if (requireClientAuthOption.HasValue())
@@ -300,5 +235,29 @@ namespace RelayUtil
             return true;
         }
 
+        static string GetMessageBody(CommandOption valueOption, CommandOption lengthOption, string defaultValue)
+        {
+            string requestData = valueOption.HasValue() ? valueOption.Value() : defaultValue;
+            if (lengthOption.HasValue())
+            {
+                if (string.IsNullOrEmpty(requestData))
+                {
+                    requestData = "1234567890";
+                }
+
+                int requestedLength = int.Parse(lengthOption.Value());
+                var stringBuffer = new StringBuilder(requestedLength);
+
+                int countNeeded;
+                while ((countNeeded = requestedLength - stringBuffer.Length) > 0)
+                {
+                    stringBuffer.Append(requestData.Substring(0, Math.Min(countNeeded, requestData.Length)));
+                }
+
+                requestData = stringBuffer.ToString();
+            }
+
+            return requestData;
+        }
     }
 }
