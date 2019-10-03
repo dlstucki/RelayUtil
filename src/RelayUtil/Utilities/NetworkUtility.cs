@@ -1,13 +1,11 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-
 namespace RelayUtil
 {
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
-    using System.IO;
     using System.Net;
     using System.Net.Sockets;
     using System.Text;
@@ -20,7 +18,7 @@ namespace RelayUtil
             80, 443, 5671, 9350, 9351, 9352, 9353, 9354
         };
 
-        public static async Task<string> VerifyRelayPortsAsync(string hostName, TextWriter output)
+        public static async Task<string> VerifyRelayPortsAsync(string hostName)
         {
             var stringBuilder = new StringBuilder();
             stringBuilder.Append($"Checking {hostName} ");

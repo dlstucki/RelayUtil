@@ -12,7 +12,7 @@ namespace RelayUtil
     using Microsoft.Extensions.CommandLineUtils;
     using RelayUtil.HybridConnections;
 
-    static class HybridConnectionCommands
+    class HybridConnectionCommands : RelayCommands
     {
         internal const string DefaultPath = "RelayUtilHc";
 
@@ -60,12 +60,12 @@ namespace RelayUtil
                     }
 
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
-                    hcCommand.Out.WriteLine($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host}...");
+                    RelayTraceSource.TraceInfo($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host}...");
                     var hcDescription = new HybridConnectionDescription(pathArgument.Value);
-                    hcDescription.RequiresClientAuthorization = GetRequiresClientAuthorization(requireClientAuthOption);
+                    hcDescription.RequiresClientAuthorization = GetBoolOption(requireClientAuthOption, true);
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     await namespaceManager.CreateHybridConnectionAsync(hcDescription);
-                    hcCommand.Out.WriteLine($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
+                    RelayTraceSource.TraceInfo($"Creating HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
                     return 0;
                 });
             });
@@ -89,13 +89,13 @@ namespace RelayUtil
                     }
 
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
-                    hcCommand.Out.WriteLine($"Listing HybridConnections for {connectionStringBuilder.Endpoint.Host}");
-                    hcCommand.Out.WriteLine($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20}");
+                    RelayTraceSource.TraceInfo($"Listing HybridConnections for {connectionStringBuilder.Endpoint.Host}");
+                    RelayTraceSource.TraceInfo($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20}");
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     IEnumerable<HybridConnectionDescription> hybridConnections = await namespaceManager.GetHybridConnectionsAsync();
                     foreach (var hybridConnection in hybridConnections)
                     {
-                        hcCommand.Out.WriteLine($"{hybridConnection.Path,-38} {hybridConnection.ListenerCount,-15} {hybridConnection.RequiresClientAuthorization}");
+                        RelayTraceSource.TraceInfo($"{hybridConnection.Path,-38} {hybridConnection.ListenerCount,-15} {hybridConnection.RequiresClientAuthorization}");
                     }
 
                     return 0;
@@ -122,10 +122,10 @@ namespace RelayUtil
                     }
 
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
-                    hcCommand.Out.WriteLine($"Deleting HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host}...");
+                    RelayTraceSource.TraceInfo($"Deleting HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host}...");
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     await namespaceManager.DeleteHybridConnectionAsync(pathArgument.Value);
-                    hcCommand.Out.WriteLine($"Deleting HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
+                    RelayTraceSource.TraceInfo($"Deleting HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
                     return 0;
                 });
             });
@@ -142,6 +142,7 @@ namespace RelayUtil
 
                 var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
                 var responseLengthOption = listenCmd.Option("--response-length <responseLength>", "Length of response to return", CommandOptionType.SingleValue);
+                var responseChunkLengthOption = listenCmd.Option("--response-chunk-length <responseLength>", "Length of response to return", CommandOptionType.SingleValue);
                 var statusCodeOption = listenCmd.Option("--status-code <statusCode>", "The HTTP Status Code to return (200|201|401|404|etc.)", CommandOptionType.SingleValue);
                 var statusDescriptionOption = listenCmd.Option("--status-description <statusDescription>", "The HTTP Status Description to return", CommandOptionType.SingleValue);
                 var verboseOption = listenCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
@@ -158,9 +159,10 @@ namespace RelayUtil
                     string response = GetMessageBody(responseOption, responseLengthOption, "<html><head><title>Azure Relay HybridConnection</title></head><body>Response Body from Listener</body></html>");
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
-                    bool verbose = verboseOption.HasValue() ? true : false;
-                    var statusCode = (HttpStatusCode)int.Parse(statusCodeOption.Value() ?? "200");
-                    return await HybridConnectionTests.VerifyListenAsync(hcCommand.Out, connectionStringBuilder, response, statusCode, statusDescriptionOption.Value(), verbose);
+                    SetVerbose(verboseOption);
+                    var statusCode = (HttpStatusCode)GetIntOption(statusCodeOption, 200);
+                    int responseChunkLength = GetIntOption(responseChunkLengthOption, response.Length);
+                    return await HybridConnectionTests.VerifyListenAsync(RelayTraceSource.Instance, connectionStringBuilder, response, responseChunkLength, statusCode, statusDescriptionOption.Value());
                 });
             });
         }
@@ -193,11 +195,11 @@ namespace RelayUtil
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
 
-                    int number = int.Parse(numberOption.Value() ?? "1");
-                    string method = methodOption.Value() ?? "GET";
+                    SetVerbose(verboseOption);
+                    int number = GetIntOption(numberOption, 1);
+                    string method = GetStringOption(methodOption, "GET");
                     string requestContent = GetMessageBody(requestOption, requestLengthOption, null);
-                    bool verbose = verboseOption.HasValue() ? true : false;
-                    await HybridConnectionTests.VerifySendAsync(connectionStringBuilder, number, method, requestContent, verbose);
+                    await HybridConnectionTests.VerifySendAsync(connectionStringBuilder, number, method, requestContent, RelayTraceSource.Instance);
                     return 0;
                 });
             });
@@ -210,6 +212,7 @@ namespace RelayUtil
                 testCmd.Description = "HybridConnection tests";
                 testCmd.HelpOption(CommandStrings.HelpTemplate);
                 var connectionStringArgument = testCmd.Argument("connectionString", "Relay ConnectionString");
+                var verboseOption = testCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
                 testCmd.OnExecute(async () =>
                 {
@@ -220,44 +223,10 @@ namespace RelayUtil
                         return 1;
                     }
 
-                    return await HybridConnectionTests.RunAsync(new RelayConnectionStringBuilder(connectionString));
+                    SetVerbose(verboseOption);
+                    return await HybridConnectionTests.RunAsync(new RelayConnectionStringBuilder(connectionString), RelayTraceSource.Instance);
                 });
             });
-        }
-
-        static bool GetRequiresClientAuthorization(CommandOption requireClientAuthOption)
-        {
-            if (requireClientAuthOption.HasValue())
-            {
-                return bool.Parse(requireClientAuthOption.Value());
-            }
-
-            return true;
-        }
-
-        static string GetMessageBody(CommandOption valueOption, CommandOption lengthOption, string defaultValue)
-        {
-            string requestData = valueOption.HasValue() ? valueOption.Value() : defaultValue;
-            if (lengthOption.HasValue())
-            {
-                if (string.IsNullOrEmpty(requestData))
-                {
-                    requestData = "1234567890";
-                }
-
-                int requestedLength = int.Parse(lengthOption.Value());
-                var stringBuffer = new StringBuilder(requestedLength);
-
-                int countNeeded;
-                while ((countNeeded = requestedLength - stringBuffer.Length) > 0)
-                {
-                    stringBuffer.Append(requestData.Substring(0, Math.Min(countNeeded, requestData.Length)));
-                }
-
-                requestData = stringBuffer.ToString();
-            }
-
-            return requestData;
         }
     }
 }

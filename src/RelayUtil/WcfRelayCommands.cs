@@ -15,7 +15,7 @@ namespace RelayUtil.WcfRelays
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
 
-    class WcfRelayCommands
+    class WcfRelayCommands : RelayCommands
     {
         const string DefaultPath = "RelayUtilWcf";
         private const string BindingOptionTemplate = "-b|--binding <binding>";
@@ -66,12 +66,12 @@ namespace RelayUtil.WcfRelays
                     }
 
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    wcfCommand.Out.WriteLine($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host}...");
+                    RelayTraceSource.TraceInfo($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host}...");
                     var relayDescription = new RelayDescription(pathArgument.Value, GetRelayType(relayTypeOption));
-                    relayDescription.RequiresClientAuthorization = GetRequiresClientAuthorization(requireClientAuthOption);
+                    relayDescription.RequiresClientAuthorization = GetBoolOption(requireClientAuthOption, true);
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     await namespaceManager.CreateRelayAsync(relayDescription);
-                    wcfCommand.Out.WriteLine($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
+                    RelayTraceSource.TraceInfo($"Creating WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
                     return 0;
                 });
             });
@@ -95,13 +95,13 @@ namespace RelayUtil.WcfRelays
                     }
 
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    wcfCommand.Out.WriteLine($"Listing WcfRelays for {connectionStringBuilder.Endpoints.First().Host}");
+                    RelayTraceSource.TraceInfo($"Listing WcfRelays for {connectionStringBuilder.Endpoints.First().Host}");
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     IEnumerable<RelayDescription> relays = await namespaceManager.GetRelaysAsync();
-                    wcfCommand.Out.WriteLine($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20} RelayType");
+                    RelayTraceSource.TraceInfo($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20} RelayType");
                     foreach (var relay in relays)
                     {
-                        wcfCommand.Out.WriteLine($"{relay.Path,-38} {relay.ListenerCount,-15} {relay.RequiresClientAuthorization,-20} {relay.RelayType}");
+                        RelayTraceSource.TraceInfo($"{relay.Path,-38} {relay.ListenerCount,-15} {relay.RequiresClientAuthorization,-20} {relay.RelayType}");
                     }
 
                     return 0;
@@ -128,10 +128,10 @@ namespace RelayUtil.WcfRelays
                     }
 
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    wcfCommand.Out.WriteLine($"Deleting WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host}...");
+                    RelayTraceSource.TraceInfo($"Deleting WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host}...");
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     await namespaceManager.DeleteRelayAsync(pathArgument.Value);
-                    wcfCommand.Out.WriteLine($"Deleting WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
+                    RelayTraceSource.TraceInfo($"Deleting WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
                     return 0;
                 });
             });
@@ -169,7 +169,7 @@ namespace RelayUtil.WcfRelays
                         dynamicBinding.IsDynamic = false;
                     }
 
-                    return VerifyListen(wcfCommand.Out, connectionString, path, binding, GetConnectivityMode(connectivityModeOption), responseOption.Value());
+                    return VerifyListen(connectionString, path, binding, GetConnectivityMode(connectivityModeOption), responseOption.Value());
                 });
             });
         }
@@ -192,25 +192,25 @@ namespace RelayUtil.WcfRelays
                 {
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     string path = pathArgument.Value ?? DefaultPath;
-                    string request = requestOption.Value() ?? "Test Message Data";
+                    string request = GetStringOption(requestOption, "Test Message Data");
                     if (string.IsNullOrEmpty(connectionString))
                     {
                         sendCmd.ShowHelp();
                         return 1;
                     }
 
-                    int number = int.Parse(numberOption.Value() ?? "1");
+                    int number = GetIntOption(numberOption, 1);
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
                     Binding binding = GetBinding(bindingOption);
                     ConnectivityMode connectivityMode = GetConnectivityMode(connectivityModeOption);
-                    return VerifySend(wcfCommand.Out, request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
+                    return VerifySend(request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
                 });
             });
         }
 
-        public static int VerifyListen(TextWriter output, string connectionString, string path, Binding binding, ConnectivityMode connectivityMode, string response)
+        public static int VerifyListen(string connectionString, string path, Binding binding, ConnectivityMode connectivityMode, string response)
         {
-            output.WriteLine($"Open relay listener using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
+            RelayTraceSource.TraceInfo($"Open relay listener using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
             ServiceHost serviceHost = null;
             try
             {
@@ -228,13 +228,13 @@ namespace RelayUtil.WcfRelays
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 serviceHost.Open();
-                output.WriteLine("Relay listener \"" + endpoint.Address.Uri + "\" is open");
-                output.WriteLine("Press <ENTER> to close the listener ");
+                RelayTraceSource.TraceInfo("Relay listener \"" + endpoint.Address.Uri + "\" is open");
+                RelayTraceSource.TraceInfo("Press <ENTER> to close the listener ");
                 Console.ReadLine();
 
-                output.WriteLine("Closing Connection...");
+                RelayTraceSource.TraceInfo("Closing Connection...");
                 serviceHost.Close();
-                output.WriteLine("Closed");
+                RelayTraceSource.TraceInfo("Closed");
                 return 0;
             }
             catch (Exception)
@@ -244,9 +244,9 @@ namespace RelayUtil.WcfRelays
             }
         }
 
-        public static int VerifySend(TextWriter output, string request, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
+        public static int VerifySend(string request, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
         {
-            output.WriteLine($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
+            RelayTraceSource.TraceInfo($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
             ChannelFactory<IEchoClient> channelFactory = null;
             IEchoClient channel = null;
             try
@@ -261,23 +261,23 @@ namespace RelayUtil.WcfRelays
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
                 channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 channel = channelFactory.CreateChannel();
-                output.WriteLine($"Opening channel");
+                RelayTraceSource.TraceInfo($"Opening channel");
                 var stopwatch = Stopwatch.StartNew();
                 channel.Open();
                 stopwatch.Stop();
-                output.WriteLine($"Opened channel in {stopwatch.ElapsedMilliseconds} ms");
+                RelayTraceSource.TraceInfo($"Opened channel in {stopwatch.ElapsedMilliseconds} ms");
 
                 for (int i = 0; i < number; i++)
                 {
                     stopwatch.Restart();
                     string response = channel.Echo(DateTime.UtcNow, request);
-                    output.WriteLine($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
+                    RelayTraceSource.TraceInfo($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
                 }
 
-                output.WriteLine($"Closing channel");
+                RelayTraceSource.TraceInfo($"Closing channel");
                 channel.Close();
                 channelFactory.Close();
-                output.WriteLine($"Closed");
+                RelayTraceSource.TraceInfo($"Closed");
 
                 return 0;
             }
@@ -291,7 +291,7 @@ namespace RelayUtil.WcfRelays
 
         static Binding GetBinding(CommandOption bindingOption)
         {
-            string bindingString = bindingOption.HasValue() ? bindingOption.Value() : "nettcprelaybinding";
+            string bindingString = GetStringOption(bindingOption, "nettcprelaybinding");
 
             // Make a few friendly aliases
             switch (bindingString.ToLowerInvariant())
@@ -326,7 +326,7 @@ namespace RelayUtil.WcfRelays
 
         static ConnectivityMode GetConnectivityMode(CommandOption connectivityModeOption)
         {
-            string modeString = connectivityModeOption.HasValue() ? connectivityModeOption.Value() : "AutoDetect";
+            string modeString = GetStringOption(connectivityModeOption, "autodetect");
 
             // Make a few friendly aliases
             switch (modeString.ToLowerInvariant())
@@ -348,18 +348,8 @@ namespace RelayUtil.WcfRelays
 
         static RelayType GetRelayType(CommandOption relayTypeOption)
         {
-            string typeString = relayTypeOption.HasValue() ? relayTypeOption.Value() : "NetTcp";
+            string typeString = GetStringOption(relayTypeOption, "NetTcp");
             return (RelayType)Enum.Parse(typeof(RelayType), typeString, ignoreCase: true);
-        }
-
-        static bool GetRequiresClientAuthorization(CommandOption requireClientAuthOption)
-        {
-            if (requireClientAuthOption.HasValue())
-            {
-                return bool.Parse(requireClientAuthOption.Value());
-            }
-
-            return true;
         }
 
         [ServiceContract]
@@ -383,7 +373,7 @@ namespace RelayUtil.WcfRelays
 
             public string Echo(DateTime startTime, string message)
             {
-                Console.WriteLine($"Request: {message} ({(int)DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms from start)");
+                RelayTraceSource.TraceInfo($"Request: {message} ({(int)DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms from start)");
                 return this.response ?? message;
             }
         }

@@ -47,12 +47,12 @@ namespace RelayUtil
             }
             catch (Exception exception)
             {
-                LogException(app.Out, exception);
+                LogException(exception);
                 return exception.HResult;
             }
         }
 
-        static void LogException(TextWriter output, Exception exception)
+        static void LogException(Exception exception)
         {
             bool verbose = Environment.GetCommandLineArgs().Any(arg => arg.Equals("-v", StringComparison.CurrentCultureIgnoreCase) || arg.Equals("--verbose", StringComparison.CurrentCultureIgnoreCase));
             if (exception is AggregateException aggregateException)
@@ -62,11 +62,11 @@ namespace RelayUtil
             
             if (verbose)
             {
-                output.WriteLine(exception);
+                RelayTraceSource.TraceError($"*** {exception} ***");
             }
             else
             {
-                output.WriteLine($"*** {exception.GetType().Name}: {exception.Message} ***");
+                RelayTraceSource.TraceError($"*** {exception.GetType().Name}: {exception.Message} ***");
             }
         }
     }

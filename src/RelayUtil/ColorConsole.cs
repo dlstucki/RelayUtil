@@ -9,14 +9,14 @@ namespace RelayUtil
     {
         static readonly object classLock = new object();
 
-        public static void Write(ConsoleColor color, string text, params object[] formatArgs)
+        public static void Write(ConsoleColor color, string text)
         {
             lock (classLock)
             {
                 try
                 {
                     Console.ForegroundColor = color;
-                    Console.Write(text, formatArgs);
+                    Console.Write(text);
                 }
                 finally
                 {
@@ -25,15 +25,30 @@ namespace RelayUtil
             }
         }
 
-
-        public static void WriteLine(ConsoleColor color, string text, params object[] formatArgs)
+        public static void WriteLine(ConsoleColor color, string text)
         {
             lock (classLock)
             {
                 try
                 {
                     Console.ForegroundColor = color;
-                    Console.WriteLine(text, formatArgs);
+                    Console.WriteLine(text);
+                }
+                finally
+                {
+                    Console.ResetColor();
+                }
+            }
+        }
+
+        public static void WriteLine(ConsoleColor color, string text, params object[] args)
+        {
+            lock (classLock)
+            {
+                try
+                {
+                    Console.ForegroundColor = color;
+                    Console.WriteLine(text, args);
                 }
                 finally
                 {

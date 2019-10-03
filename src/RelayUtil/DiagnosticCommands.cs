@@ -15,7 +15,7 @@ namespace RelayUtil
     using Microsoft.Azure.Relay;
     using Microsoft.Extensions.CommandLineUtils;
 
-    class DiagnosticCommands
+    class DiagnosticCommands : RelayCommands
     {
         const string NamespaceOrConnectionStringArgumentName = "namespaceOrConnectionString";
         const string NamespaceOrConnectionStringArgumentDescription = "Relay Namespace or ConnectionString";
@@ -67,7 +67,7 @@ namespace RelayUtil
                     // NetStat output isn't part of the default run, must specify --netstat or --all
                     if (netStatOption.HasValue() || allOption.HasValue())
                     {                        
-                        ExecuteNetStatCommand(diagCommand.Out);
+                        ExecuteNetStatCommand();
                     }
 
                     NamespaceDetails namespaceDetails = default;
@@ -81,29 +81,24 @@ namespace RelayUtil
                         }
                         catch (Exception e)
                         {
-                            diagCommand.Out.WriteLine($"Error getting namespace details. {e.GetType()}: {e.Message}");
+                            RelayTraceSource.TraceWarning($"Error getting namespace details. {e.GetType()}: {e.Message}");
                         }
                     }
 
                     if (defaultOptions || osOption.HasValue() || allOption.HasValue())
                     {
-                        await ExecutePlatformCommandAsync(diagCommand.Out, namespaceDetails);
+                        await ExecutePlatformCommandAsync(namespaceDetails);
                     }
 
                     if (defaultOptions || namespaceOption.HasValue() || allOption.HasValue())
                     {
-                        ExecuteNamespaceCommand(diagCommand.Out, namespaceDetails);
+                        ExecuteNamespaceCommand(namespaceDetails);
                     }
 
                     if (defaultOptions || portsOption.HasValue() || allOption.HasValue() || instancePortsOption.HasValue())
                     {
-                        int gatewayCount = 1;
-                        if (instancePortsOption.HasValue())
-                        {
-                            gatewayCount = int.Parse(instancePortsOption.Value());
-                        }
-
-                        await ExecutePortsCommandAsync(diagCommand.Out, namespaceDetails, gatewayCount);
+                        int gatewayCount = GetIntOption(instancePortsOption, 1);
+                        await ExecutePortsCommandAsync(namespaceDetails, gatewayCount);
                     }
 
                     return 0;
@@ -111,35 +106,35 @@ namespace RelayUtil
             });
         }
 
-        static async Task ExecutePortsCommandAsync(TextWriter output, NamespaceDetails namespaceDetails, int gatewayCount)
+        static async Task ExecutePortsCommandAsync(NamespaceDetails namespaceDetails, int gatewayCount)
         {
-            PrintCommandHeader(output, "Ports");
+            TraceCommandHeader("Ports");
             if (string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
-                output.WriteLine($"{NamespaceOrConnectionStringArgumentDescription} is required");
+                RelayTraceSource.TraceError($"{NamespaceOrConnectionStringArgumentDescription} is required");
                 return;
             }
 
-            output.Write(await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.ServiceNamespace, output));
+            RelayTraceSource.TraceInfo(await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.ServiceNamespace));
 
             var tasks = new List<Task<string>>();
             for (int i = 0; i < gatewayCount; i++)
             {
                 // Build the ILPIP DNS name and run it for G0 through G63
-                var task = NetworkUtility.VerifyRelayPortsAsync(string.Format(namespaceDetails.GatewayDnsFormat, i), output);
+                var task = NetworkUtility.VerifyRelayPortsAsync(string.Format(namespaceDetails.GatewayDnsFormat, i));
                 tasks.Add(task);
             }
 
             foreach (Task<string> task in tasks)
             {
                 string result = await task;
-                output.Write(result);
+                RelayTraceSource.TraceInfo(result);
             }
         }
 
-        static void ExecuteNamespaceCommand(TextWriter output, NamespaceDetails namespaceDetails)
+        static void ExecuteNamespaceCommand(NamespaceDetails namespaceDetails)
         {
-            PrintCommandHeader(output, "Namespace Details");
+            TraceCommandHeader("Namespace Details");
             const string OutputFormat = "{0,-26}{1}";
 
             bool foundAny = false;
@@ -147,7 +142,7 @@ namespace RelayUtil
             {
                 if (condition)
                 {
-                    output.WriteLine(OutputFormat, name + ":", valueSelector());
+                    RelayTraceSource.TraceInfo(OutputFormat, name + ":", valueSelector());
                     foundAny = true;
                 }
             }
@@ -160,32 +155,32 @@ namespace RelayUtil
 
             if (!foundAny)
             {
-                output.WriteLine($"{NamespaceOrConnectionStringArgumentDescription} is required");
+                RelayTraceSource.TraceWarning($"{NamespaceOrConnectionStringArgumentDescription} is required");
             }
         }
 
-        static void ExecuteNetStatCommand(TextWriter output)
+        static void ExecuteNetStatCommand()
         {
-            PrintCommandHeader(output, "NetStat.exe");
+            TraceCommandHeader("NetStat.exe");
             ExecuteProcess(
                 "netstat.exe",
                 "-ano -p tcp",
                 TimeSpan.FromSeconds(30),
-                (s) => output.WriteLine(s),
-                (s) => output.WriteLine("ERROR: " + s),
+                (s) => RelayTraceSource.TraceInfo(s),
+                (s) => RelayTraceSource.TraceError("ERROR: " + s),
                 throwOnNonZero: true);
         }
 
-        static async Task ExecutePlatformCommandAsync(TextWriter output, NamespaceDetails namespaceDetails)
+        static async Task ExecutePlatformCommandAsync(NamespaceDetails namespaceDetails)
         {
-            PrintCommandHeader(output, "OS/Platform");
+            TraceCommandHeader("OS/Platform");
             const string OutputFormat = "{0,-26}{1}";
-            output.WriteLine(OutputFormat, "OSVersion:", Environment.OSVersion);
-            output.WriteLine(OutputFormat, "ProcessorCount:", Environment.ProcessorCount);
-            output.WriteLine(OutputFormat, "Is64BitOperatingSystem:", Environment.Is64BitOperatingSystem);
-            output.WriteLine(OutputFormat, "CLR Version:", Environment.Version);
-            output.WriteLine(OutputFormat, "mscorlib AssemblyVersion:", typeof(object).Assembly.GetName().Version);
-            output.WriteLine(OutputFormat, "mscorlib FileVersion:", FileVersionInfo.GetVersionInfo(typeof(object).Assembly.Location).FileVersion);
+            RelayTraceSource.TraceInfo("OSVersion:", Environment.OSVersion);
+            RelayTraceSource.TraceInfo(OutputFormat, "ProcessorCount:", Environment.ProcessorCount);
+            RelayTraceSource.TraceInfo(OutputFormat, "Is64BitOperatingSystem:", Environment.Is64BitOperatingSystem);
+            RelayTraceSource.TraceInfo(OutputFormat, "CLR Version:", Environment.Version);
+            RelayTraceSource.TraceInfo(OutputFormat, "mscorlib AssemblyVersion:", typeof(object).Assembly.GetName().Version);
+            RelayTraceSource.TraceInfo(OutputFormat, "mscorlib FileVersion:", FileVersionInfo.GetVersionInfo(typeof(object).Assembly.Location).FileVersion);
 
             if (!string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
@@ -193,13 +188,13 @@ namespace RelayUtil
                 webRequest.Method = "GET";
                 using (var response = await webRequest.GetResponseAsync())
                 {
-                    output.WriteLine(OutputFormat, "Azure Time:", response.Headers["Date"]); // RFC1123
+                    RelayTraceSource.TraceInfo(OutputFormat, "Azure Time:", response.Headers["Date"]); // RFC1123
                 }
             }
 
             var utcNow = DateTime.UtcNow;
-            output.WriteLine(OutputFormat, "Machine Time(UTC):", utcNow.ToString(DateTimeFormatInfo.InvariantInfo.RFC1123Pattern));
-            output.WriteLine(OutputFormat, "Machine Time(Local):", utcNow.ToLocalTime().ToString("ddd, dd MMM yyyy HH':'mm':'ss '('zzz')'")); // Like RFC1123Pattern but with zzz for timezone offset
+            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(UTC):", utcNow.ToString(DateTimeFormatInfo.InvariantInfo.RFC1123Pattern));
+            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(Local):", utcNow.ToLocalTime().ToString("ddd, dd MMM yyyy HH':'mm':'ss '('zzz')'")); // Like RFC1123Pattern but with zzz for timezone offset
         }
 
         static int ExecuteProcess(string filePath, string args, TimeSpan timeout, Action<string> outputDataReceived, Action<string> errorDataReceived, bool throwOnNonZero)
@@ -259,11 +254,6 @@ namespace RelayUtil
 
                 return process.ExitCode;
             }
-        }
-
-        static void PrintCommandHeader(TextWriter output, string commandName)
-        {            
-            output.WriteLine($"{output.NewLine}****************************** {commandName} ******************************");
         }
     }
 }

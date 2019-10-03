@@ -71,6 +71,8 @@
   <ItemGroup>
     <Compile Include="ColorConsole.cs" />
     <Compile Include="CommandStrings.cs" />
+    <Compile Include="RelayCommands.cs" />
+    <Compile Include="RelayTraceSource.cs" />
     <Compile Include="Utilities\ConnectionStringUtility.cs" />
     <Compile Include="DiagnosticCommands.cs" />
     <Compile Include="HybridConnectionCommands.cs" />
