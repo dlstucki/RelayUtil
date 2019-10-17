@@ -28,8 +28,7 @@ namespace RelayUtil
             var app = new CommandLineApplication();
             app.Name = nameof(RelayUtil);
             app.Description = "Azure Relay Utility Commands";
-            app.HelpOption(CommandStrings.HelpTemplate);
-            app.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
+            RelayCommands.CommonSetup(app);
 
             try
             {
@@ -47,26 +46,8 @@ namespace RelayUtil
             }
             catch (Exception exception)
             {
-                LogException(exception);
+                RelayCommands.LogException(exception);
                 return exception.HResult;
-            }
-        }
-
-        static void LogException(Exception exception)
-        {
-            bool verbose = Environment.GetCommandLineArgs().Any(arg => arg.Equals("-v", StringComparison.CurrentCultureIgnoreCase) || arg.Equals("--verbose", StringComparison.CurrentCultureIgnoreCase));
-            if (exception is AggregateException aggregateException)
-            {
-                exception = aggregateException.GetBaseException();
-            }
-            
-            if (verbose)
-            {
-                RelayTraceSource.TraceError($"*** {exception} ***");
-            }
-            else
-            {
-                RelayTraceSource.TraceError($"*** {exception.GetType().Name}: {exception.Message} ***");
             }
         }
     }

@@ -18,10 +18,9 @@ namespace RelayUtil
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
-            app.Command("hc", (hcCommand) =>
+            app.RelayCommand("hc", (hcCommand) =>
             {
                 hcCommand.Description = "Operations for HybridConnections (CRUD, Test)";
-                hcCommand.HelpOption(CommandStrings.HelpTemplate);
                 ConfigureCreateCommand(hcCommand);
                 ConfigureListCommand(hcCommand);
                 ConfigureDeleteCommand(hcCommand);
@@ -39,10 +38,9 @@ namespace RelayUtil
 
         static void ConfigureCreateCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("create", (createCmd) =>
+            hcCommand.RelayCommand("create", (createCmd) =>
             {
                 createCmd.Description = "Create a HybridConnection";
-                createCmd.HelpOption(CommandStrings.HelpTemplate);
 
                 var pathArgument = createCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = createCmd.Argument("connectionString", "Relay ConnectionString");
@@ -73,11 +71,10 @@ namespace RelayUtil
 
         static void ConfigureListCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("list", (listCmd) =>
+            hcCommand.RelayCommand("list", (listCmd) =>
             {
                 listCmd.Description = "List HybridConnection(s)";
                 var connectionStringArgument = listCmd.Argument("connectionString", "Relay ConnectionString");
-                listCmd.HelpOption(CommandStrings.HelpTemplate);
 
                 listCmd.OnExecute(async () =>
                 {
@@ -105,10 +102,9 @@ namespace RelayUtil
 
         static void ConfigureDeleteCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("delete", (deleteCmd) =>
+            hcCommand.RelayCommand("delete", (deleteCmd) =>
             {
                 deleteCmd.Description = "Delete a HybridConnection";
-                deleteCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = deleteCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = deleteCmd.Argument("connectionString", "Relay ConnectionString");
 
@@ -133,10 +129,9 @@ namespace RelayUtil
 
         static void ConfigureListenCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("listen", (listenCmd) =>
+            hcCommand.RelayCommand("listen", (listenCmd) =>
             {
                 listenCmd.Description = "HybridConnection listen command";
-                listenCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = listenCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
 
@@ -145,7 +140,6 @@ namespace RelayUtil
                 var responseChunkLengthOption = listenCmd.Option("--response-chunk-length <responseLength>", "Length of response to return", CommandOptionType.SingleValue);
                 var statusCodeOption = listenCmd.Option("--status-code <statusCode>", "The HTTP Status Code to return (200|201|401|404|etc.)", CommandOptionType.SingleValue);
                 var statusDescriptionOption = listenCmd.Option("--status-description <statusDescription>", "The HTTP Status Description to return", CommandOptionType.SingleValue);
-                var verboseOption = listenCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
                 listenCmd.OnExecute(async () =>
                 {
@@ -159,7 +153,6 @@ namespace RelayUtil
                     string response = GetMessageBody(responseOption, responseLengthOption, "<html><head><title>Azure Relay HybridConnection</title></head><body>Response Body from Listener</body></html>");
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
-                    SetVerbose(verboseOption);
                     var statusCode = (HttpStatusCode)GetIntOption(statusCodeOption, 200);
                     int responseChunkLength = GetIntOption(responseChunkLengthOption, response.Length);
                     return await HybridConnectionTests.VerifyListenAsync(RelayTraceSource.Instance, connectionStringBuilder, response, responseChunkLength, statusCode, statusDescriptionOption.Value());
@@ -169,11 +162,9 @@ namespace RelayUtil
 
         static void ConfigureSendCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("send", (sendCmd) =>
+            hcCommand.RelayCommand("send", (sendCmd) =>
             {
                 sendCmd.Description = "HybridConnection send command";
-                sendCmd.HelpOption(CommandStrings.HelpTemplate);
-
                 var pathArgument = sendCmd.Argument("path", "HybridConnection path");
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
@@ -181,7 +172,6 @@ namespace RelayUtil
                 var methodOption = sendCmd.Option("-m|--method <method>", "The HTTP Method (GET|POST|PUT|DELETE)", CommandOptionType.SingleValue);
                 var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
                 var requestLengthOption = sendCmd.Option(CommandStrings.RequestLengthTemplate, CommandStrings.RequestLengthDescription, CommandOptionType.SingleValue);
-                var verboseOption = sendCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
                 sendCmd.OnExecute(async () =>
                 {
@@ -195,7 +185,6 @@ namespace RelayUtil
                     var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
                     connectionStringBuilder.EntityPath = pathArgument.Value ?? connectionStringBuilder.EntityPath ?? DefaultPath;
 
-                    SetVerbose(verboseOption);
                     int number = GetIntOption(numberOption, 1);
                     string method = GetStringOption(methodOption, "GET");
                     string requestContent = GetMessageBody(requestOption, requestLengthOption, null);
@@ -207,12 +196,10 @@ namespace RelayUtil
 
         static void ConfigureTestCommand(CommandLineApplication hcCommand)
         {
-            hcCommand.Command("test", (testCmd) =>
+            hcCommand.RelayCommand("test", (testCmd) =>
             {
                 testCmd.Description = "HybridConnection tests";
-                testCmd.HelpOption(CommandStrings.HelpTemplate);
                 var connectionStringArgument = testCmd.Argument("connectionString", "Relay ConnectionString");
-                var verboseOption = testCmd.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
 
                 testCmd.OnExecute(async () =>
                 {
@@ -223,7 +210,6 @@ namespace RelayUtil
                         return 1;
                     }
 
-                    SetVerbose(verboseOption);
                     return await HybridConnectionTests.RunAsync(new RelayConnectionStringBuilder(connectionString), RelayTraceSource.Instance);
                 });
             });

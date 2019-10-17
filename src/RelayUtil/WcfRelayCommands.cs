@@ -6,7 +6,6 @@ namespace RelayUtil.WcfRelays
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
-    using System.IO;
     using System.Linq;
     using System.ServiceModel;
     using System.ServiceModel.Channels;
@@ -23,10 +22,9 @@ namespace RelayUtil.WcfRelays
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
-            app.Command("wcf", (wcfCommand) =>
+            app.RelayCommand("wcf", (wcfCommand) =>
             {
                 wcfCommand.Description = "Operations for WcfRelays (CRUD, Test)";
-                wcfCommand.HelpOption(CommandStrings.HelpTemplate);
                 ConfigureWcfCreateCommand(wcfCommand);
                 ConfigureWcfListCommand(wcfCommand);
                 ConfigureWcfDeleteCommand(wcfCommand);
@@ -43,10 +41,9 @@ namespace RelayUtil.WcfRelays
 
         static void ConfigureWcfCreateCommand(CommandLineApplication wcfCommand)
         {
-            wcfCommand.Command("create", (createCmd) =>
+            wcfCommand.RelayCommand("create", (createCmd) =>
             {
                 createCmd.Description = "Create a WcfRelay";
-                createCmd.HelpOption(CommandStrings.HelpTemplate);
 
                 var pathArgument = createCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = createCmd.Argument("connectionString", "Relay ConnectionString");
@@ -79,11 +76,10 @@ namespace RelayUtil.WcfRelays
 
         static void ConfigureWcfListCommand(CommandLineApplication wcfCommand)
         {
-            wcfCommand.Command("list", (listCmd) =>
+            wcfCommand.RelayCommand("list", (listCmd) =>
             {
                 listCmd.Description = "List WcfRelay(s)";
                 var connectionStringArgument = listCmd.Argument("connectionString", "Relay ConnectionString");
-                listCmd.HelpOption(CommandStrings.HelpTemplate);
 
                 listCmd.OnExecute(async () =>
                 {
@@ -111,10 +107,9 @@ namespace RelayUtil.WcfRelays
 
         static void ConfigureWcfDeleteCommand(CommandLineApplication wcfCommand)
         {
-            wcfCommand.Command("delete", (deleteCmd) =>
+            wcfCommand.RelayCommand("delete", (deleteCmd) =>
             {
                 deleteCmd.Description = "Delete a WcfRelay";
-                deleteCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = deleteCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = deleteCmd.Argument("connectionString", "Relay ConnectionString");
 
@@ -139,11 +134,9 @@ namespace RelayUtil.WcfRelays
 
         static void ConfigureWcfListenCommand(CommandLineApplication wcfCommand)
         {
-            wcfCommand.Command("listen", (listenCmd) =>
+            wcfCommand.RelayCommand("listen", (listenCmd) =>
             {
                 listenCmd.Description = "WcfRelay listen command";
-                listenCmd.HelpOption(CommandStrings.HelpTemplate);
-
                 var pathArgument = listenCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
 
@@ -176,10 +169,9 @@ namespace RelayUtil.WcfRelays
 
         static void ConfigureWcfSendCommand(CommandLineApplication wcfCommand)
         {
-            wcfCommand.Command("send", (sendCmd) =>
+            wcfCommand.RelayCommand("send", (sendCmd) =>
             {
                 sendCmd.Description = "WcfRelay send command";
-                sendCmd.HelpOption(CommandStrings.HelpTemplate);
                 var pathArgument = sendCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 

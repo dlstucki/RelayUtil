@@ -5,18 +5,41 @@ namespace RelayUtil
 {
     using System;
     using System.Diagnostics;
+    using System.Linq;
+    using System.Net;
     using System.Text;
     using Microsoft.Extensions.CommandLineUtils;
 
     class RelayCommands
     {
-        public static void SetVerbose(CommandOption verboseOption)
+        public static CommandLineApplication CommonSetup(CommandLineApplication app)
         {
-            bool verbose = verboseOption.HasValue();
+            app.HelpOption(CommandStrings.HelpTemplate);
+            app.Option(CommandStrings.VerboseTemplate, CommandStrings.VerboseDescription, CommandOptionType.NoValue);
+
+            // Check if verbose was specified anywhere on the command line:
+            bool verbose = Environment.GetCommandLineArgs().Any(arg =>
+                arg.Equals(CommandStrings.VerboseShort, StringComparison.CurrentCultureIgnoreCase) ||
+                arg.Equals(CommandStrings.VerboseLong, StringComparison.CurrentCultureIgnoreCase));
+
             if (verbose)
             {
                 RelayTraceSource.Instance.Switch.Level = SourceLevels.Verbose;
             }
+
+            return app;
+        }
+
+        public static void LogException(Exception exception, string operation = "")
+        {
+            operation = !string.IsNullOrEmpty(operation) ? operation + ": " : string.Empty;
+            if (exception is AggregateException aggregateException)
+            {
+                exception = aggregateException.GetBaseException();
+            }
+
+            RelayTraceSource.TraceError($"*** {operation}{exception.GetType().Name}: {exception.Message} ***");
+            RelayTraceSource.TraceVerbose($"{exception}");
         }
 
         public static bool GetBoolOption(CommandOption boolOption, bool defaultValue)

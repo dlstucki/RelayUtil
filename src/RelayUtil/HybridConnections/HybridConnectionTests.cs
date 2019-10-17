@@ -60,8 +60,8 @@ namespace RelayUtil.HybridConnections
             }
             catch (Exception exception)
             {
-                traceSource.TraceError($"Exception: {exception}");
                 traceSource.TraceError("FAILED");
+                RelayCommands.LogException(exception);
                 returnCode = exception.HResult;
             }
             finally

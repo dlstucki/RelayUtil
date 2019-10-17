@@ -17,7 +17,9 @@ namespace RelayUtil
         public const string RequestDescription = "The request to send";
         public const string RequestLengthTemplate = "--request-length <requestLength>";
         public const string RequestLengthDescription = "The length of request to send";
-        public const string VerboseTemplate = "-v|--verbose";
+        public const string VerboseShort = "-v";
+        public const string VerboseLong = "--verbose";
+        public const string VerboseTemplate = VerboseShort + "|" + VerboseLong;
         public const string VerboseDescription = "Show verbose output";
     }
 }

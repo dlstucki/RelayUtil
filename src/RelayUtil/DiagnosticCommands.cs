@@ -7,7 +7,6 @@ namespace RelayUtil
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Globalization;
-    using System.IO;
     using System.Linq;
     using System.Net;
     using System.Threading;
@@ -17,16 +16,15 @@ namespace RelayUtil
 
     class DiagnosticCommands : RelayCommands
     {
+        const string OutputFormat = "{0,-26}{1}";
         const string NamespaceOrConnectionStringArgumentName = "namespaceOrConnectionString";
         const string NamespaceOrConnectionStringArgumentDescription = "Relay Namespace or ConnectionString";
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
-            app.Command("diag", (diagCommand) =>
+            app.RelayCommand("diag", (diagCommand) =>
             {
-                // TODO
                 diagCommand.Description = "Operations for diagnosing relay/hc issues (Analyze)";
-                diagCommand.HelpOption(CommandStrings.HelpTemplate);
                 var namespaceOrConnectionStringArgument = diagCommand.Argument(NamespaceOrConnectionStringArgumentName, NamespaceOrConnectionStringArgumentDescription);
 
                 CommandOption allOption = diagCommand.Option(
@@ -61,12 +59,13 @@ namespace RelayUtil
 
                 diagCommand.OnExecute(async () =>
                 {
-                    bool defaultOptions = !diagCommand.Options.Any(o => o.HasValue());
+                    bool defaultOptions = !allOption.HasValue() && !namespaceOption.HasValue() && !netStatOption.HasValue() &&
+                        !portsOption.HasValue() && !instancePortsOption.HasValue() && !osOption.HasValue();
 
                     // Run netstat before we try to lookup the namespace to keep ourself out of the results
                     // NetStat output isn't part of the default run, must specify --netstat or --all
                     if (netStatOption.HasValue() || allOption.HasValue())
-                    {                        
+                    {
                         ExecuteNetStatCommand();
                     }
 
@@ -81,7 +80,7 @@ namespace RelayUtil
                         }
                         catch (Exception e)
                         {
-                            RelayTraceSource.TraceWarning($"Error getting namespace details. {e.GetType()}: {e.Message}");
+                            LogException(e, "Getting namespace details");
                         }
                     }
 
@@ -135,7 +134,6 @@ namespace RelayUtil
         static void ExecuteNamespaceCommand(NamespaceDetails namespaceDetails)
         {
             TraceCommandHeader("Namespace Details");
-            const string OutputFormat = "{0,-26}{1}";
 
             bool foundAny = false;
             void OutputLineIf(bool condition, string name, Func<string> valueSelector)
@@ -174,7 +172,6 @@ namespace RelayUtil
         static async Task ExecutePlatformCommandAsync(NamespaceDetails namespaceDetails)
         {
             TraceCommandHeader("OS/Platform");
-            const string OutputFormat = "{0,-26}{1}";
             RelayTraceSource.TraceInfo("OSVersion:", Environment.OSVersion);
             RelayTraceSource.TraceInfo(OutputFormat, "ProcessorCount:", Environment.ProcessorCount);
             RelayTraceSource.TraceInfo(OutputFormat, "Is64BitOperatingSystem:", Environment.Is64BitOperatingSystem);
@@ -184,17 +181,29 @@ namespace RelayUtil
 
             if (!string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
-                var webRequest = WebRequest.CreateHttp(new Uri($"https://{namespaceDetails.ServiceNamespace}"));
+                await GetCloudServiceTimeAsync(namespaceDetails.ServiceNamespace);
+            }
+
+            var utcNow = DateTime.UtcNow;
+            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(UTC):", utcNow.ToString(DateTimeFormatInfo.InvariantInfo.RFC1123Pattern));
+            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(Local):", utcNow.ToLocalTime().ToString("ddd, dd MMM yyyy HH':'mm':'ss '('zzz')'")); // Like RFC1123Pattern but with zzz for timezone offset
+        }
+
+        static async Task GetCloudServiceTimeAsync(string serviceNamespace)
+        {
+            try
+            {
+                var webRequest = WebRequest.CreateHttp(new Uri($"https://{serviceNamespace}"));
                 webRequest.Method = "GET";
                 using (var response = await webRequest.GetResponseAsync())
                 {
                     RelayTraceSource.TraceInfo(OutputFormat, "Azure Time:", response.Headers["Date"]); // RFC1123
                 }
             }
-
-            var utcNow = DateTime.UtcNow;
-            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(UTC):", utcNow.ToString(DateTimeFormatInfo.InvariantInfo.RFC1123Pattern));
-            RelayTraceSource.TraceInfo(OutputFormat, "Machine Time(Local):", utcNow.ToLocalTime().ToString("ddd, dd MMM yyyy HH':'mm':'ss '('zzz')'")); // Like RFC1123Pattern but with zzz for timezone offset
+            catch (Exception exception)
+            {
+                LogException(exception, "Getting current time from Relay cloud service");
+            }
         }
 
         static int ExecuteProcess(string filePath, string args, TimeSpan timeout, Action<string> outputDataReceived, Action<string> errorDataReceived, bool throwOnNonZero)
