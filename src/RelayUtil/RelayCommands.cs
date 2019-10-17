@@ -7,6 +7,8 @@ namespace RelayUtil
     using System.Diagnostics;
     using System.Linq;
     using System.Net;
+    using System.Reflection;
+    using System.Security.Authentication;
     using System.Text;
     using Microsoft.Extensions.CommandLineUtils;
 
@@ -67,6 +69,18 @@ namespace RelayUtil
             return stringOption.Value() ?? defaultValue;
         }
 
+        public static TEnum GetEnumOption<TEnum>(CommandOption enumOption, TEnum defaultValue)
+            where TEnum : struct
+        {
+            if (enumOption.HasValue())
+            {
+                string stringValue = GetStringOption(enumOption, string.Empty);
+                return (TEnum)Enum.Parse(typeof(TEnum), stringValue, ignoreCase: true);
+            }
+
+            return defaultValue;
+        }
+
         public static string GetMessageBody(CommandOption valueOption, CommandOption lengthOption, string defaultValue)
         {
             string messageData = valueOption.HasValue() ? valueOption.Value() : defaultValue;
@@ -92,9 +106,31 @@ namespace RelayUtil
             return messageData;
         }
 
+        public static void ConfigureSecurityProtocol(CommandOption protocolOption)
+        {
+            if (protocolOption != null && protocolOption.HasValue())
+            {
+                ServicePointManager.SecurityProtocol = GetEnumOption(protocolOption, ServicePointManager.SecurityProtocol);
+                SetServicePointManagerDefaultSslProtocols(GetEnumOption(protocolOption, SslProtocols.Default));
+            }
+        }
+
         public static void TraceCommandHeader(string commandName)
         {
             RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"============================== {commandName} ==============================");
+        }
+
+        static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)
+        {
+            FieldInfo s_defaultSslProtocols = typeof(ServicePointManager).GetField("s_defaultSslProtocols", BindingFlags.Static | BindingFlags.NonPublic);
+            if (s_defaultSslProtocols != null)
+            {
+                s_defaultSslProtocols.SetValue(null, sslProtocols);
+            }
+            else
+            {
+                RelayTraceSource.TraceWarning("ServicePointManager.s_defaultSslProtocols field not found.");
+            }
         }
     }
 }

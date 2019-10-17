@@ -57,8 +57,12 @@ namespace RelayUtil
                     "Display Platform/OS/.NET information",
                     CommandOptionType.NoValue);
 
+                CommandOption protocolOption = diagCommand.AddSecurityProtocolOption();
+
                 diagCommand.OnExecute(async () =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
+
                     bool defaultOptions = !allOption.HasValue() && !namespaceOption.HasValue() && !netStatOption.HasValue() &&
                         !portsOption.HasValue() && !instancePortsOption.HasValue() && !osOption.HasValue();
 

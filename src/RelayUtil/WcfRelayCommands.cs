@@ -7,6 +7,9 @@ namespace RelayUtil.WcfRelays
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Linq;
+    using System.Net;
+    using System.Reflection;
+    using System.Security.Authentication;
     using System.ServiceModel;
     using System.ServiceModel.Channels;
     using System.ServiceModel.Description;
@@ -52,9 +55,11 @@ namespace RelayUtil.WcfRelays
                     "-t|--relaytype <relaytype>", "The RelayType (nettcp|http)", CommandOptionType.SingleValue);
                 var requireClientAuthOption = createCmd.Option(
                     CommandStrings.RequiresClientAuthTemplate, CommandStrings.RequiresClientAuthDescription, CommandOptionType.SingleValue);
+                var protocolOption = createCmd.AddSecurityProtocolOption();
 
                 createCmd.OnExecute(async () =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
@@ -80,9 +85,11 @@ namespace RelayUtil.WcfRelays
             {
                 listCmd.Description = "List WcfRelay(s)";
                 var connectionStringArgument = listCmd.Argument("connectionString", "Relay ConnectionString");
+                var protocolOption = listCmd.AddSecurityProtocolOption();
 
                 listCmd.OnExecute(async () =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
@@ -112,9 +119,11 @@ namespace RelayUtil.WcfRelays
                 deleteCmd.Description = "Delete a WcfRelay";
                 var pathArgument = deleteCmd.Argument("path", "WcfRelay path");
                 var connectionStringArgument = deleteCmd.Argument("connectionString", "Relay ConnectionString");
+                var protocolOption = deleteCmd.AddSecurityProtocolOption();
 
                 deleteCmd.OnExecute(async () =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
@@ -143,9 +152,12 @@ namespace RelayUtil.WcfRelays
                 var bindingOption = listenCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
                 var connectivityModeOption = listenCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
                 var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
+                var protocolOption = listenCmd.AddSecurityProtocolOption();
 
                 listenCmd.OnExecute(() =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
+
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     string path = pathArgument.Value ?? DefaultPath;
                     if (string.IsNullOrEmpty(connectionString))
@@ -179,9 +191,12 @@ namespace RelayUtil.WcfRelays
                 var bindingOption = sendCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
                 var connectivityModeOption = sendCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
                 var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
+                var protocolOption = sendCmd.AddSecurityProtocolOption();
 
                 sendCmd.OnExecute(() =>
                 {
+                    ConfigureSecurityProtocol(protocolOption);
+
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     string path = pathArgument.Value ?? DefaultPath;
                     string request = GetStringOption(requestOption, "Test Message Data");
@@ -198,6 +213,19 @@ namespace RelayUtil.WcfRelays
                     return VerifySend(request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
                 });
             });
+        }
+
+        static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)
+        {
+            FieldInfo s_defaultSslProtocols = typeof(ServicePointManager).GetField("s_defaultSslProtocols", BindingFlags.Static | BindingFlags.NonPublic);
+            if (s_defaultSslProtocols != null)
+            {
+                s_defaultSslProtocols.SetValue(null, sslProtocols);
+            }
+            else
+            {
+                RelayTraceSource.TraceWarning("ServicePointManager.s_defaultSslProtocols field not found.");
+            }
         }
 
         public static int VerifyListen(string connectionString, string path, Binding binding, ConnectivityMode connectivityMode, string response)
