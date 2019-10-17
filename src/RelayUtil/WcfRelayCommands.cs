@@ -218,14 +218,9 @@ namespace RelayUtil.WcfRelays
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
 
                 string relayNamespace = connectionStringBuilder.Endpoints.First().Host;
-                if (relayNamespace.Contains("."))
-                {
-                    relayNamespace = relayNamespace.Split('.')[0];
-                }
-
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
                 serviceHost = new ServiceHost(new WcfEchoService(response));
-                ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path));
+                ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 serviceHost.Open();
                 RelayTraceSource.TraceInfo("Relay listener \"" + endpoint.Address.Uri + "\" is open");
@@ -251,13 +246,8 @@ namespace RelayUtil.WcfRelays
             IEchoClient channel = null;
             try
             {
-                if (relayNamespace.Contains("."))
-                {
-                    relayNamespace = relayNamespace.Split('.')[0];
-                }
-
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
-                channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(ServiceBusEnvironment.CreateServiceUri(binding.Scheme, relayNamespace, path)));
+                channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(new Uri($"{binding.Scheme}://{relayNamespace}/{path}")));
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
                 channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 channel = channelFactory.CreateChannel();
