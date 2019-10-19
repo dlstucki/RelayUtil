@@ -13,6 +13,7 @@ namespace RelayUtil.WcfRelays
     using System.ServiceModel;
     using System.ServiceModel.Channels;
     using System.ServiceModel.Description;
+    using System.ServiceModel.Web;
     using Microsoft.Extensions.CommandLineUtils;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
@@ -21,7 +22,7 @@ namespace RelayUtil.WcfRelays
     {
         const string DefaultPath = "RelayUtilWcf";
         private const string BindingOptionTemplate = "-b|--binding <binding>";
-        private const string BindingOptionDescription = "The Wcf Binding. (NetTcpRelayBinding|BasicHttpRelayBinding)";
+        private const string BindingOptionDescription = "The Wcf Binding. (nettcp|basichttp|webhttp|wshttp)";
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
@@ -239,7 +240,15 @@ namespace RelayUtil.WcfRelays
 
                 string relayNamespace = connectionStringBuilder.Endpoints.First().Host;
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
-                serviceHost = new ServiceHost(new WcfEchoService(response));
+                if (!(binding is WebHttpRelayBinding))
+                {
+                    serviceHost = new ServiceHost(new WcfEchoService(response));
+                }
+                else
+                {
+                    serviceHost = new WebServiceHost(new WcfEchoService(response));
+                }
+
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 serviceHost.Open();
@@ -267,7 +276,16 @@ namespace RelayUtil.WcfRelays
             try
             {
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
-                channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(new Uri($"{binding.Scheme}://{relayNamespace}/{path}")));
+                Uri address = new Uri($"{binding.Scheme}://{relayNamespace}/{path}");
+                if (!(binding is WebHttpRelayBinding))
+                {
+                    channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(address));
+                }
+                else
+                {
+                    channelFactory = new WebChannelFactory<IEchoClient>(binding, address);
+                }
+
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
                 channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
                 channel = channelFactory.CreateChannel();
@@ -309,7 +327,7 @@ namespace RelayUtil.WcfRelays
                 case "basichttp":
                 case "basichttprelay":
                 case "basichttprelaybinding":
-                    return new BasicHttpRelayBinding();
+                    return new BasicHttpRelayBinding { UseDefaultWebProxy = true };
                 case "tcp":
                 case "nettcp":
                 case "nettcprelay":
@@ -321,16 +339,14 @@ namespace RelayUtil.WcfRelays
                 case "wshttprelay":
                 case "wshttprelaybinding":
                 case "ws2007httprelaybinding":
-                    return new WS2007HttpRelayBinding();
+                    return new WS2007HttpRelayBinding { UseDefaultWebProxy = true };
+                case "web":
+                case "webhttp":
+                case "webhttprelay":
+                case "webhttprelaybinding":
+                    return new WebHttpRelayBinding(EndToEndWebHttpSecurityMode.Transport, RelayClientAuthenticationType.None) { UseDefaultWebProxy = true };
                 default:
                     throw new ArgumentException("Unknown binding type: " + bindingString, "binding");
-
-                // TODO: Needs more work:
-                ////case "web":
-                ////case "webhttp":
-                ////case "webhttprelay":
-                ////case "webhttprelaybinding":
-                ////    return new WebHttpRelayBinding();
             }
         }
 
@@ -365,8 +381,26 @@ namespace RelayUtil.WcfRelays
         [ServiceContract]
         interface IEcho
         {
+            /// <summary>
+            /// Here's a sample HTTP request for WebHttpRelayBinding
+            /// POST https://YOURRELAY.servicebus.windows.net/RelayUtilWcf/echo?start=2019-10-19T00:44:36.0328204Z HTTP/1.1
+            /// Content-Type: application/json
+            /// Content-Length: 20
+            /// 
+            /// "Test Message Data2"
+            /// </summary>
             [OperationContract]
-            string Echo(DateTime startTime, string message);
+            [WebInvoke(Method = "POST", RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json, UriTemplate = "echo?start={start}")]
+            string Echo(DateTime start, string message);
+
+            /// <summary>
+            /// Here's a sample HTTP request for WebHttpRelayBinding
+            /// GET https://YOURRELAY.servicebus.windows.net/RelayUtilWcf/get?start=2019-10-19T00:44:36.0328204Z&message=hello%20http HTTP/1.1
+            /// 
+            /// </summary>
+            [WebGet(ResponseFormat = WebMessageFormat.Json, UriTemplate ="get?start={start}&message={message}")]
+            [OperationContract]
+            string Get(DateTime start, string message);
         }
 
         interface IEchoClient : IEcho, IClientChannel { }
@@ -381,10 +415,28 @@ namespace RelayUtil.WcfRelays
                 this.response = response;
             }
 
-            public string Echo(DateTime startTime, string message)
+            public string Echo(DateTime start, string message)
             {
-                RelayTraceSource.TraceInfo($"Request: {message} ({(int)DateTime.UtcNow.Subtract(startTime).TotalMilliseconds}ms from start)");
+                string duration = string.Empty;
+                if (start != default)
+                {
+                    duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
+                }
+
+                RelayTraceSource.TraceInfo($"Echo Request: {message} {duration}");
                 return this.response ?? message;
+            }
+
+            public string Get(DateTime start, string message)
+            {
+                string duration = string.Empty;
+                if (start != default)
+                {
+                    duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
+                }
+
+                RelayTraceSource.TraceInfo($"Get Request: {message} {duration}");
+                return this.response ?? DateTime.UtcNow.ToString("o");
             }
         }
     }
