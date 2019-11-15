@@ -251,12 +251,23 @@ namespace RelayUtil.WcfRelays
 
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
+
+                // Trace status changes
+                var connectionStatus = new ConnectionStatusBehavior();
+                connectionStatus.Connecting += (s, e) => LogException(connectionStatus.LastError, TraceEventType.Warning, "Relay listener Re-Connecting");
+                connectionStatus.Online += (s, e) => RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "Relay Listener is online");
+                EventHandler offlineHandler = (s, e) => LogException(connectionStatus.LastError, "Relay Listener is OFFLINE");
+                connectionStatus.Offline += offlineHandler;
+                endpoint.EndpointBehaviors.Add(connectionStatus);
+                serviceHost.Faulted += (s, e) => LogException(connectionStatus.LastError, "Relay listener ServiceHost Faulted");
+
                 serviceHost.Open();
                 RelayTraceSource.TraceInfo("Relay listener \"" + endpoint.Address.Uri + "\" is open");
                 RelayTraceSource.TraceInfo("Press <ENTER> to close the listener ");
                 Console.ReadLine();
 
                 RelayTraceSource.TraceInfo("Closing Connection...");
+                connectionStatus.Offline -= offlineHandler; // Avoid a spurious trace on expected shutdown.
                 serviceHost.Close();
                 RelayTraceSource.TraceInfo("Closed");
                 return 0;

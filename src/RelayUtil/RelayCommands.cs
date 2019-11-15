@@ -34,14 +34,19 @@ namespace RelayUtil
 
         public static void LogException(Exception exception, string operation = "")
         {
+            LogException(exception, TraceEventType.Error, operation);
+        }
+
+        public static void LogException(Exception exception, TraceEventType eventType, string operation)
+        {
             operation = !string.IsNullOrEmpty(operation) ? operation + ": " : string.Empty;
             if (exception is AggregateException aggregateException)
             {
                 exception = aggregateException.GetBaseException();
             }
 
-            RelayTraceSource.TraceError($"*** {operation}{exception.GetType().Name}: {exception.Message} ***");
-            RelayTraceSource.TraceVerbose($"{exception}");
+            RelayTraceSource.Instance.TraceEvent(eventType, 0, $"*** {operation}{exception.ToString().Split('\r')[0]} ***");
+            RelayTraceSource.TraceVerbose($"{operation}{exception}");
         }
 
         public static bool GetBoolOption(CommandOption boolOption, bool defaultValue)

@@ -243,9 +243,9 @@ namespace RelayUtil.HybridConnections
             try
             {
                 listener = new HybridConnectionListener(connectionString.ToString());
-                listener.Connecting += (s, e) => traceSource.TraceWarning($"Listener attempting to connect. Last Error: {listener.LastError}");
-                listener.Online += (s, e) => traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "Listener is online");
-                EventHandler offlineHandler = (s, e) => traceSource.TraceError($"Listener is OFFLINE. Last Error: {listener.LastError}");
+                listener.Connecting += (s, e) => RelayCommands.LogException(listener.LastError, TraceEventType.Warning, "HybridConnectionListener Re-Connecting");
+                listener.Online += (s, e) => RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "HybridConnectionListener is online");
+                EventHandler offlineHandler = (s, e) => RelayCommands.LogException(listener.LastError, "HybridConnectionListener is OFFLINE");
                 listener.Offline += offlineHandler;
 
                 var responseBytes = Encoding.UTF8.GetBytes(responseBody);
