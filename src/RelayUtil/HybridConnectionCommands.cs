@@ -169,7 +169,7 @@ namespace RelayUtil
                 var connectionStringArgument = sendCmd.Argument("connectionString", "Relay ConnectionString");
 
                 var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
-                var methodOption = sendCmd.Option("-m|--method <method>", "The HTTP Method (GET|POST|PUT|DELETE)", CommandOptionType.SingleValue);
+                var methodOption = sendCmd.Option("-m|--method <method>", "The HTTP Method (GET|POST|PUT|DELETE|WEBSOCKET)", CommandOptionType.SingleValue);
                 var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
                 var requestLengthOption = sendCmd.Option(CommandStrings.RequestLengthTemplate, CommandStrings.RequestLengthDescription, CommandOptionType.SingleValue);
 

@@ -11,8 +11,8 @@ namespace RelayUtil
     using System.Net;
     using System.Threading;
     using System.Threading.Tasks;
-    using Microsoft.Azure.Relay;
     using Microsoft.Extensions.CommandLineUtils;
+    using Microsoft.ServiceBus;
 
     class DiagnosticCommands : RelayCommands
     {
@@ -77,14 +77,14 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(namespaceOrConnectionStringArgument); // Might not be present
                     if (!string.IsNullOrEmpty(connectionString))
                     {
-                        var connectionStringBuilder = new RelayConnectionStringBuilder(connectionString);
+                        var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
                         try
                         {
-                            namespaceDetails = await NamespaceUtility.GetNamespaceDetailsAsync(connectionStringBuilder.Endpoint.Host);
+                            namespaceDetails = await NamespaceUtility.GetNamespaceDetailsAsync(connectionStringBuilder.Endpoints.First().Host);
                         }
                         catch (Exception e)
                         {
-                            LogException(e, "Getting namespace details");
+                            RelayTraceSource.TraceException(e, "Getting namespace details");
                         }
                     }
 
@@ -206,7 +206,7 @@ namespace RelayUtil
             }
             catch (Exception exception)
             {
-                LogException(exception, "Getting current time from Relay cloud service");
+                RelayTraceSource.TraceException(exception, "Getting current time from Relay cloud service");
             }
         }
 

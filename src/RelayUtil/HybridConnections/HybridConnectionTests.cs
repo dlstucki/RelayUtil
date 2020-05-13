@@ -50,18 +50,20 @@ namespace RelayUtil.HybridConnections
                 {
                     client.DefaultRequestHeaders.ExpectContinue = false;
 
-                    await PostLargeRequestSmallResponse(listener, token, client, traceSource);
-                    await PostLargeRequestWithLargeResponse(listener, token, client, traceSource);
-                    await GetLargeResponse(listener, token, client, traceSource);
-                    await GetSmallResponse(listener, token, client, traceSource);
-
-                    traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "All tests succeeded");
+                    await TestPostLargeRequestSmallResponse(listener, token, client, traceSource);
+                    await TestPostLargeRequestWithLargeResponse(listener, token, client, traceSource);
+                    await TestGetLargeResponse(listener, token, client, traceSource);
+                    await TestGetSmallResponse(listener, token, client, traceSource);
                 }
+
+                await TestStreaming(listener, connectionString, traceSource);
+
+                traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "All tests succeeded");
             }
             catch (Exception exception)
             {
                 traceSource.TraceError("FAILED");
-                RelayCommands.LogException(exception);
+                RelayTraceSource.TraceException(exception, nameof(HybridConnectionTests));
                 returnCode = exception.HResult;
             }
             finally
@@ -95,9 +97,9 @@ namespace RelayUtil.HybridConnections
             return returnCode;
         }
 
-        static async Task GetSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
+        static async Task TestGetSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
         {
-            RelayCommands.TraceCommandHeader("Testing GET small response (over control connection)");
+            RelayCommands.TraceCommandHeader("Testing GET small response (over control connection)", traceSource);
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context, traceSource);
@@ -114,13 +116,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response, traceSource);
                 response.EnsureSuccessStatusCode();
-                traceSource.TraceInformation("Success");
+                traceSource.TraceInformation("Passed");
             }
         }
 
-        static async Task GetLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
+        static async Task TestGetLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
         {
-            RelayCommands.TraceCommandHeader("Testing GET large response (over rendezvous)");
+            RelayCommands.TraceCommandHeader("Testing GET large response (over rendezvous)", traceSource);
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context, traceSource);
@@ -136,13 +138,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response, traceSource);
                 response.EnsureSuccessStatusCode();
-                traceSource.TraceInformation("Success");
+                traceSource.TraceInformation("Passed");
             }
         }
 
-        static async Task PostLargeRequestSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
+        static async Task TestPostLargeRequestSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
         {
-            RelayCommands.TraceCommandHeader("Testing POST large request with small response (over rendezvous)");
+            RelayCommands.TraceCommandHeader("Testing POST large request with small response (over rendezvous)", traceSource);
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context, traceSource);
@@ -159,13 +161,13 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response, traceSource);
                 response.EnsureSuccessStatusCode();
-                traceSource.TraceInformation("Success");
+                traceSource.TraceInformation("Passed");
             }
         }
 
-        static async Task PostLargeRequestWithLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
+        static async Task TestPostLargeRequestWithLargeResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)
         {
-            RelayCommands.TraceCommandHeader("Testing POST large request with large response (over rendezvous)");
+            RelayCommands.TraceCommandHeader("Testing POST large request with large response (over rendezvous)", traceSource);
             listener.RequestHandler = async (context) =>
             {
                 LogHttpRequest(context, traceSource);
@@ -182,18 +184,79 @@ namespace RelayUtil.HybridConnections
             {
                 LogHttpResponse(response, traceSource);
                 response.EnsureSuccessStatusCode();
-                traceSource.TraceInformation("Success");
+                traceSource.TraceInformation("Passed");
             }
+        }
+
+        static async Task TestStreaming(HybridConnectionListener listener, RelayConnectionStringBuilder connectionString, TraceSource traceSource)
+        {
+            RelayCommands.TraceCommandHeader("Testing Streaming (WebSocket) mode", traceSource);
+            using (var acceptPumpCts = new CancellationTokenSource())
+            {
+                RunAcceptPump(listener, acceptPumpCts.Token);
+
+                var client = new HybridConnectionClient(connectionString.ToString());
+                var requestBytes = Encoding.UTF8.GetBytes("<data>Request payload from sender</data>");
+                HybridConnectionStream stream = await client.CreateConnectionAsync();
+                string connectionName = $"S:HybridConnectionStream({stream.TrackingContext.TrackingId})";
+                RelayTraceSource.TraceInfo($"{connectionName} initiated");
+                RunConnectionPump(stream, connectionName);
+                for (int i = 0; i < 2; i++)
+                {
+                    await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+                    RelayTraceSource.TraceVerbose($"{connectionName} wrote {requestBytes.Length} bytes");
+                }
+
+                acceptPumpCts.Cancel();
+
+                using (var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                {
+                    RelayTraceSource.TraceVerbose($"{connectionName} closing");
+                    await stream.CloseAsync(closeCts.Token);
+                    RelayTraceSource.TraceInfo($"{connectionName} closed");
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            traceSource.TraceInformation("Passed");
         }
 
         internal static async Task VerifySendAsync(RelayConnectionStringBuilder connectionString, int number, string httpMethod, string requestData, TraceSource traceSource)
         {
             Uri hybridHttpUri = new Uri($"https://{connectionString.Endpoint.GetComponents(UriComponents.HostAndPort, UriFormat.SafeUnescaped)}/{connectionString.EntityPath}");
             var tokenProvider = GetTokenProvider(connectionString);
+
+            if (string.Equals("WS", httpMethod, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals("WEBSOCKET", httpMethod, StringComparison.OrdinalIgnoreCase))
+            {
+                var client = new HybridConnectionClient(connectionString.ToString());
+                var requestBytes = Encoding.UTF8.GetBytes(requestData ?? string.Empty);
+                HybridConnectionStream stream = await client.CreateConnectionAsync();
+                string connectionName = $"S:HybridConnectionStream({stream.TrackingContext.TrackingId})";
+                RelayTraceSource.TraceInfo($"{connectionName} initiated");
+                RunConnectionPump(stream, connectionName);
+                for (int i = 0; i < number; i++)
+                {
+                    await stream.WriteAsync(requestBytes, 0, requestBytes.Length);
+                    RelayTraceSource.TraceVerbose($"{connectionName} wrote {requestBytes.Length} bytes");
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                {
+                    RelayTraceSource.TraceVerbose($"{connectionName} closing");
+                    await stream.CloseAsync(cts.Token);
+                    RelayTraceSource.TraceInfo($"{connectionName} closed");
+                }
+
+                return;
+            }
+
             string token = null;
             if (tokenProvider != null)
             {
-                token = (await tokenProvider.GetTokenAsync(hybridHttpUri.AbsoluteUri, TimeSpan.FromMinutes(20))).TokenString;
+                token = (await tokenProvider.GetTokenAsync(hybridHttpUri.AbsoluteUri, TimeSpan.FromDays(2))).TokenString;
             }
 
             var stopwatch = new Stopwatch();
@@ -231,21 +294,29 @@ namespace RelayUtil.HybridConnections
         {
             bool createdHybridConnection = false;
             var namespaceManager = new RelayNamespaceManager(connectionString.ToString());
-            if (!await namespaceManager.HybridConnectionExistsAsync(connectionString.EntityPath))
+            try
             {
-                traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"Creating HybridConnection '{connectionString.EntityPath}'");
-                createdHybridConnection = true;
-                await namespaceManager.CreateHybridConnectionAsync(new HybridConnectionDescription(connectionString.EntityPath));
-                traceSource.TraceInformation("Created");
+                if (!await namespaceManager.HybridConnectionExistsAsync(connectionString.EntityPath))
+                {
+                    traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"Creating HybridConnection '{connectionString.EntityPath}'");
+                    createdHybridConnection = true;
+                    await namespaceManager.CreateHybridConnectionAsync(new HybridConnectionDescription(connectionString.EntityPath));
+                    traceSource.TraceInformation("Created");
+                }
+            }
+            catch (Exception exception)
+            {
+                RelayTraceSource.TraceException(exception, "Error Checking for and optionally creating HC");
             }
 
             HybridConnectionListener listener = null;
+            var closeCancelTokenSource = new CancellationTokenSource();
             try
             {
                 listener = new HybridConnectionListener(connectionString.ToString());
-                listener.Connecting += (s, e) => RelayCommands.LogException(listener.LastError, TraceEventType.Warning, "HybridConnectionListener Re-Connecting");
+                listener.Connecting += (s, e) => RelayTraceSource.TraceException(listener.LastError, TraceEventType.Warning, "HybridConnectionListener Re-Connecting");
                 listener.Online += (s, e) => RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "HybridConnectionListener is online");
-                EventHandler offlineHandler = (s, e) => RelayCommands.LogException(listener.LastError, "HybridConnectionListener is OFFLINE");
+                EventHandler offlineHandler = (s, e) => RelayTraceSource.TraceException(listener.LastError, "HybridConnectionListener is OFFLINE");
                 listener.Offline += offlineHandler;
 
                 var responseBytes = Encoding.UTF8.GetBytes(responseBody);
@@ -279,16 +350,18 @@ namespace RelayUtil.HybridConnections
                     }
                     catch (Exception exception)
                     {
-                        ColorConsole.WriteLine(ConsoleColor.Red, $"RequestHandler Error: {exception.GetType()}: {exception.Message}");
+                        RelayTraceSource.TraceException(exception, $"RequestHandler Error");
                     }
                 };
 
-                Console.WriteLine($"Opening {listener}");
+                traceSource.TraceInformation($"Opening {listener}");
                 await listener.OpenAsync();
+                RunAcceptPump(listener, closeCancelTokenSource.Token);
                 traceSource.TraceInformation("Press <ENTER> to close the listener ");
                 Console.ReadLine();
 
                 traceSource.TraceInformation($"Closing {listener}");
+                closeCancelTokenSource.Cancel();
                 listener.Offline -= offlineHandler; // Avoid a spurious trace on expected shutdown.
                 await listener.CloseAsync();
                 traceSource.TraceInformation("Closed");
@@ -301,6 +374,7 @@ namespace RelayUtil.HybridConnections
             }
             finally
             {
+                closeCancelTokenSource.Dispose();
                 if (createdHybridConnection)
                 {
                     try
@@ -309,14 +383,71 @@ namespace RelayUtil.HybridConnections
                         await namespaceManager.DeleteHybridConnectionAsync(connectionString.EntityPath);
                         traceSource.TraceInformation("Deleted");
                     }
-                    catch (Exception)
+                    catch (Exception exception)
                     {
+                        RelayTraceSource.TraceException(exception, "Deleting HybridConnection");
                     }
                 }
             }
         }
 
-        internal static TokenProvider GetTokenProvider(RelayConnectionStringBuilder connectionString)
+        static async void RunAcceptPump(HybridConnectionListener listener, CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    HybridConnectionStream stream = await listener.AcceptConnectionAsync();
+                    if (stream != null)
+                    {
+                        string connectionName = $"L:HybridConnectionStream({stream.TrackingContext.TrackingId})";
+                        RelayTraceSource.TraceInfo($"{connectionName} accepted");
+                        RunConnectionPump(stream, connectionName, echoBytes: true);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    RelayTraceSource.TraceException(exception, nameof(RunAcceptPump));
+                    await Task.Delay(TimeSpan.FromMilliseconds(100));
+                }
+            }
+        }
+
+        static async void RunConnectionPump(HybridConnectionStream stream, string connectionName, bool echoBytes = false)
+        {
+            try
+            {
+                var buffer = new byte[256];
+                while (true)
+                {
+                    int read = await stream.ReadAsync(buffer, 0, buffer.Length);
+                    RelayTraceSource.TraceVerbose($"{connectionName} received {read} bytes: \"{Encoding.UTF8.GetString(buffer, 0, read)}\"");
+                    if (read == 0)
+                    {
+                        using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+                        {
+                            RelayTraceSource.TraceVerbose($"{connectionName} closing");
+                            await stream.CloseAsync(cts.Token);
+                            RelayTraceSource.TraceInfo($"{connectionName} closed");
+                        }
+
+                        return;
+                    }
+
+                    if (echoBytes)
+                    {
+                        await stream.WriteAsync(buffer, 0, read);
+                        RelayTraceSource.TraceVerbose($"{connectionName} echoed {read} bytes");
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                RelayTraceSource.TraceException(exception, nameof(RunConnectionPump));
+            }
+        }
+
+        static TokenProvider GetTokenProvider(RelayConnectionStringBuilder connectionString)
         {
             if (!string.IsNullOrEmpty(connectionString.SharedAccessKeyName) || !string.IsNullOrEmpty(connectionString.SharedAccessKey))
             {
@@ -337,7 +468,7 @@ namespace RelayUtil.HybridConnections
             return null;
         }
 
-        public static void LogHttpRequest(HttpRequestMessage httpRequest, HttpClient httpClient, TraceSource traceSource)
+        static void LogHttpRequest(HttpRequestMessage httpRequest, HttpClient httpClient, TraceSource traceSource)
         {
             string requestUri = $"{httpClient?.BaseAddress}{httpRequest.RequestUri}";
             traceSource.TraceInformation($"Request:  {httpRequest.Method} {requestUri} HTTP/{httpRequest.Version}");
@@ -357,7 +488,7 @@ namespace RelayUtil.HybridConnections
             }
         }
 
-        internal static void LogHttpRequest(RelayedHttpListenerContext context, TraceSource traceSource)
+        static void LogHttpRequest(RelayedHttpListenerContext context, TraceSource traceSource)
         {
             string requestBody = new StreamReader(context.Request.InputStream).ReadToEnd();
             string output = $"Request:  {context.Request.HttpMethod} {context.Request.Url} ";
@@ -370,7 +501,7 @@ namespace RelayUtil.HybridConnections
             traceSource.TraceInformation(output);
         }
 
-        internal static void LogHttpResponse(HttpResponseMessage httpResponse, TraceSource traceSource)
+        static void LogHttpResponse(HttpResponseMessage httpResponse, TraceSource traceSource)
         {
             var eventType = TraceEventType.Information;
             if ((int)httpResponse.StatusCode >= 500)

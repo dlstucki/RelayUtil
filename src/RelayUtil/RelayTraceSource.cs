@@ -32,10 +32,6 @@ namespace RelayUtil
             Instance.TraceEvent(TraceEventType.Warning, 0, message);
         }
 
-        public static void TraceWarning(string message, params object[] args)
-        {
-            Instance.TraceEvent(TraceEventType.Warning, 0, message, args);
-        }
 
         public static void TraceWarning(this TraceSource traceSource, string message)
         {
@@ -62,9 +58,21 @@ namespace RelayUtil
             Instance.TraceEvent(TraceEventType.Verbose, 0, message);
         }
 
-        public static void TraceVerbose(string message, params object[] args)
+        public static void TraceException(Exception exception, string operation = "")
         {
-            Instance.TraceEvent(TraceEventType.Verbose, 0, message, args);
+            TraceException(exception, TraceEventType.Error, operation);
+        }
+
+        public static void TraceException(Exception exception, TraceEventType eventType, string operation)
+        {
+            operation = !string.IsNullOrEmpty(operation) ? operation + ": " : string.Empty;
+            if (exception is AggregateException aggregateException)
+            {
+                exception = aggregateException.GetBaseException();
+            }
+
+            Instance.TraceEvent(eventType, 0, $"*** {operation}{exception.ToString().Split('\r')[0]} ***");
+            TraceVerbose($"{operation}{exception}");
         }
 
         class ColorConsoleTraceListener : ConsoleTraceListener
@@ -76,22 +84,19 @@ namespace RelayUtil
             public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id)
             {
                 var color = GetColor(eventType, id);
-                ////ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff]"));
-                ColorConsole.WriteLine(color, string.Empty);
+                ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff]"));
             }
 
             public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id, string format, params object[] args)
             {
                 var color = GetColor(eventType, id);
-                ////ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff] ") + format, args);
-                ColorConsole.WriteLine(color, format, args);
+                ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff] ") + format, args);
             }
 
             public override void TraceEvent(TraceEventCache eventCache, string source, TraceEventType eventType, int id, string message)
             {
                 var color = GetColor(eventType, id);
-                ////ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff] ") + message);
-                ColorConsole.WriteLine(color, message);
+                ColorConsole.WriteLine(color, eventCache.DateTime.ToString("[HH:mm:ss.fff] ") + message);
             }
 
             static ConsoleColor GetColor(TraceEventType eventType, int id)

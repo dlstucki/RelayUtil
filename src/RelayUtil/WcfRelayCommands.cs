@@ -22,7 +22,7 @@ namespace RelayUtil.WcfRelays
     {
         const string DefaultPath = "RelayUtilWcf";
         private const string BindingOptionTemplate = "-b|--binding <binding>";
-        private const string BindingOptionDescription = "The Wcf Binding. (nettcp|basichttp|webhttp|wshttp)";
+        private const string BindingOptionDescription = "The Wcf Binding. (nettcp|basichttp|webhttp|wshttp|netoneway|netevent)";
 
         internal static void ConfigureCommands(CommandLineApplication app)
         {
@@ -151,6 +151,7 @@ namespace RelayUtil.WcfRelays
                 var connectionStringArgument = listenCmd.Argument("connectionString", "Relay ConnectionString");
 
                 var bindingOption = listenCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
+                var noClientAuthOption = listenCmd.Option("--no-client-auth", "Skip client authentication", CommandOptionType.NoValue);
                 var connectivityModeOption = listenCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
                 var responseOption = listenCmd.Option("--response <response>", "Response to return", CommandOptionType.SingleValue);
                 var protocolOption = listenCmd.AddSecurityProtocolOption();
@@ -167,12 +168,20 @@ namespace RelayUtil.WcfRelays
                         return 1;
                     }
 
-                    Binding binding = GetBinding(bindingOption);
-                    var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
-                    if (namespaceManager.RelayExists(path))
+                    Binding binding = GetBinding(bindingOption, noClientAuthOption);
+                    try
                     {
-                        dynamic dynamicBinding = binding;
-                        dynamicBinding.IsDynamic = false;
+                        var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
+                        namespaceManager.Settings.OperationTimeout = TimeSpan.FromSeconds(5);
+                        if (namespaceManager.RelayExists(path))
+                        {
+                            dynamic dynamicBinding = binding;
+                            dynamicBinding.IsDynamic = false;
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        RelayTraceSource.TraceException(exception, "Error calling RelayExists");
                     }
 
                     return VerifyListen(connectionString, path, binding, GetConnectivityMode(connectivityModeOption), responseOption.Value());
@@ -190,6 +199,7 @@ namespace RelayUtil.WcfRelays
 
                 var numberOption = sendCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
                 var bindingOption = sendCmd.Option(BindingOptionTemplate, BindingOptionDescription, CommandOptionType.SingleValue);
+                var noClientAuthOption = sendCmd.Option("--no-client-auth", "Skip client authentication", CommandOptionType.NoValue);
                 var connectivityModeOption = sendCmd.Option(CommandStrings.ConnectivityModeTemplate, CommandStrings.ConnectivityModeDescription, CommandOptionType.SingleValue);
                 var requestOption = sendCmd.Option(CommandStrings.RequestTemplate, CommandStrings.RequestDescription, CommandOptionType.SingleValue);
                 var protocolOption = sendCmd.AddSecurityProtocolOption();
@@ -209,9 +219,9 @@ namespace RelayUtil.WcfRelays
 
                     int number = GetIntOption(numberOption, 1);
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    Binding binding = GetBinding(bindingOption);
+                    Binding binding = GetBinding(bindingOption, noClientAuthOption);
                     ConnectivityMode connectivityMode = GetConnectivityMode(connectivityModeOption);
-                    return VerifySend(request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
+                    return VerifySend(request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, noClientAuthOption.HasValue(), connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
                 });
             });
         }
@@ -249,17 +259,18 @@ namespace RelayUtil.WcfRelays
                     serviceHost = new WebServiceHost(new WcfEchoService(response));
                 }
 
-                ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(typeof(IEcho), binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
+                Type contractType = IsOneWay(binding) ? typeof(ITestOneway) : typeof(IEcho);
+                ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(contractType, binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
                 endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
 
                 // Trace status changes
                 var connectionStatus = new ConnectionStatusBehavior();
-                connectionStatus.Connecting += (s, e) => LogException(connectionStatus.LastError, TraceEventType.Warning, "Relay listener Re-Connecting");
+                connectionStatus.Connecting += (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, TraceEventType.Warning, "Relay listener Re-Connecting");
                 connectionStatus.Online += (s, e) => RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "Relay Listener is online");
-                EventHandler offlineHandler = (s, e) => LogException(connectionStatus.LastError, "Relay Listener is OFFLINE");
+                EventHandler offlineHandler = (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, "Relay Listener is OFFLINE");
                 connectionStatus.Offline += offlineHandler;
                 endpoint.EndpointBehaviors.Add(connectionStatus);
-                serviceHost.Faulted += (s, e) => LogException(connectionStatus.LastError, "Relay listener ServiceHost Faulted");
+                serviceHost.Faulted += (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, "Relay listener ServiceHost Faulted");
 
                 serviceHost.Open();
                 RelayTraceSource.TraceInfo("Relay listener \"" + endpoint.Address.Uri + "\" is open");
@@ -279,26 +290,43 @@ namespace RelayUtil.WcfRelays
             }
         }
 
-        public static int VerifySend(string request, string relayNamespace, string path, int number, Binding binding, ConnectivityMode connectivityMode, string keyName, string keyValue)
+        public static int VerifySend(string request, string relayNamespace, string path, int number, Binding binding, bool noClientAuth, ConnectivityMode connectivityMode, string keyName, string keyValue)
         {
             RelayTraceSource.TraceInfo($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
-            ChannelFactory<IEchoClient> channelFactory = null;
-            IEchoClient channel = null;
+            if (IsOneWay(binding))
+            {
+                return VerifySendCore<ITestOnewayClient>(request, relayNamespace, path, number, binding, noClientAuth, connectivityMode, keyName, keyValue);
+            }
+            else
+            {
+                return VerifySendCore<IEchoClient>(request, relayNamespace, path, number, binding, noClientAuth, connectivityMode, keyName, keyValue);
+            }
+        }
+
+        static int VerifySendCore<TChannel>(string request, string relayNamespace, string path, int number, Binding binding, bool noClientAuth, ConnectivityMode connectivityMode, string keyName, string keyValue)
+            where TChannel : class, IClientChannel
+        {
+            ChannelFactory<TChannel> channelFactory = null;
+            TChannel channel = null;
             try
             {
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
                 Uri address = new Uri($"{binding.Scheme}://{relayNamespace}/{path}");
-                if (!(binding is WebHttpRelayBinding))
+                if (binding is WebHttpRelayBinding)
                 {
-                    channelFactory = new ChannelFactory<IEchoClient>(binding, new EndpointAddress(address));
+                    channelFactory = new WebChannelFactory<TChannel>(binding, address);
                 }
                 else
                 {
-                    channelFactory = new WebChannelFactory<IEchoClient>(binding, address);
+                    channelFactory = new ChannelFactory<TChannel>(binding, new EndpointAddress(address));
                 }
 
                 var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(keyName, keyValue);
-                channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
+                if (!noClientAuth)
+                {
+                    channelFactory.Endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
+                }
+
                 channel = channelFactory.CreateChannel();
                 RelayTraceSource.TraceInfo($"Opening channel");
                 var stopwatch = Stopwatch.StartNew();
@@ -309,8 +337,20 @@ namespace RelayUtil.WcfRelays
                 for (int i = 0; i < number; i++)
                 {
                     stopwatch.Restart();
-                    string response = channel.Echo(DateTime.UtcNow, request);
-                    RelayTraceSource.TraceInfo($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
+                    if (channel is IEchoClient echoChannel)
+                    {
+                        string response = echoChannel.Echo(DateTime.UtcNow, request);
+                        RelayTraceSource.TraceInfo($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
+                    }
+                    else if (channel is ITestOnewayClient onewayClient)
+                    {
+                        onewayClient.Operation(DateTime.UtcNow, request);
+                        RelayTraceSource.TraceInfo($"Sent Oneway Request: {request} ({stopwatch.ElapsedMilliseconds} ms)");
+                    }
+                    else
+                    {
+                        throw new NotSupportedException($"Contract {typeof(TChannel)} is not supported");
+                    }
                 }
 
                 RelayTraceSource.TraceInfo($"Closing channel");
@@ -328,7 +368,7 @@ namespace RelayUtil.WcfRelays
             }
         }
 
-        static Binding GetBinding(CommandOption bindingOption)
+        static Binding GetBinding(CommandOption bindingOption, CommandOption noClientAuthOption)
         {
             string bindingString = GetStringOption(bindingOption, "nettcprelaybinding");
 
@@ -338,24 +378,77 @@ namespace RelayUtil.WcfRelays
                 case "basichttp":
                 case "basichttprelay":
                 case "basichttprelaybinding":
-                    return new BasicHttpRelayBinding { UseDefaultWebProxy = true };
+                    var basicHttpRelayBinding = new BasicHttpRelayBinding { UseDefaultWebProxy = true };
+                    if (noClientAuthOption.HasValue())
+                    {
+                        basicHttpRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        basicHttpRelayBinding.Security.Mode = EndToEndBasicHttpSecurityMode.None;
+                    }
+
+                    return basicHttpRelayBinding;
+                case "event":
+                case "netevent":
+                case "neteventrelay":
+                case "neteventrelaybinding":
+                    var eventRelayBinding = new NetEventRelayBinding();
+                    if (noClientAuthOption.HasValue())
+                    {
+                        eventRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        eventRelayBinding.Security.Mode = EndToEndSecurityMode.None;
+                    }
+
+                    return eventRelayBinding;
+                case "oneway":
+                case "netone":
+                case "netoneway":
+                case "netonewayrelay":
+                case "netonewayrelaybinding":
+                    var netOnewayRelayBinding = new NetOnewayRelayBinding();
+                    if (noClientAuthOption.HasValue())
+                    {
+                        netOnewayRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        netOnewayRelayBinding.Security.Mode = EndToEndSecurityMode.None;
+                    }
+
+                    return netOnewayRelayBinding;
                 case "tcp":
                 case "nettcp":
                 case "nettcprelay":
                 case "nettcprelaybinding":
-                    return new NetTcpRelayBinding();
+                    var netTcpRelayBinding = new NetTcpRelayBinding();
+                    if (noClientAuthOption.HasValue())
+                    {
+                        netTcpRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        netTcpRelayBinding.Security.Mode = EndToEndSecurityMode.None;
+                    }
+
+                    return netTcpRelayBinding;
                 case "ws2007":
                 case "wshttp":
                 case "ws2007httprelay":
                 case "wshttprelay":
                 case "wshttprelaybinding":
                 case "ws2007httprelaybinding":
-                    return new WS2007HttpRelayBinding { UseDefaultWebProxy = true };
+                    var ws2007HttpRelayBinding = new WS2007HttpRelayBinding { UseDefaultWebProxy = true };
+                    if (noClientAuthOption.HasValue())
+                    {
+                        ws2007HttpRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        ws2007HttpRelayBinding.Security.Mode = EndToEndSecurityMode.None;
+                    }
+
+                    return ws2007HttpRelayBinding;
                 case "web":
                 case "webhttp":
                 case "webhttprelay":
-                case "webhttprelaybinding":
-                    return new WebHttpRelayBinding(EndToEndWebHttpSecurityMode.Transport, RelayClientAuthenticationType.None) { UseDefaultWebProxy = true };
+                case "webhttprelaybinding":                    
+                    var webHttpRelayBinding = new WebHttpRelayBinding() { UseDefaultWebProxy = true };
+                    if (noClientAuthOption.HasValue())
+                    {
+                        webHttpRelayBinding.Security.RelayClientAuthenticationType = RelayClientAuthenticationType.None;
+                        webHttpRelayBinding.Security.Mode = EndToEndWebHttpSecurityMode.None;
+                    }
+
+                    return webHttpRelayBinding;
                 default:
                     throw new ArgumentException("Unknown binding type: " + bindingString, "binding");
             }
@@ -389,6 +482,11 @@ namespace RelayUtil.WcfRelays
             return (RelayType)Enum.Parse(typeof(RelayType), typeString, ignoreCase: true);
         }
 
+        static bool IsOneWay(Binding binding)
+        {
+            return binding is NetOnewayRelayBinding || binding is NetEventRelayBinding;
+        }
+
         [ServiceContract]
         interface IEcho
         {
@@ -416,8 +514,17 @@ namespace RelayUtil.WcfRelays
 
         interface IEchoClient : IEcho, IClientChannel { }
 
+        [ServiceContract]
+        interface ITestOneway
+        {
+            [OperationContract(IsOneWay=true)]
+            void Operation(DateTime start, string message);
+        }
+
+        interface ITestOnewayClient : ITestOneway, IClientChannel { }
+
         [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, ConcurrencyMode = ConcurrencyMode.Multiple)]
-        sealed class WcfEchoService : IEcho
+        sealed class WcfEchoService : IEcho, ITestOneway
         {
             readonly string response;
 
@@ -448,6 +555,17 @@ namespace RelayUtil.WcfRelays
 
                 RelayTraceSource.TraceInfo($"Get Request: {message} {duration}");
                 return this.response ?? DateTime.UtcNow.ToString("o");
+            }
+
+            void ITestOneway.Operation(DateTime start, string message)
+            {
+                string duration = string.Empty;
+                if (start != default)
+                {
+                    duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
+                }
+
+                RelayTraceSource.TraceInfo($"ITestOneway.Operation: {message} {duration}");
             }
         }
     }

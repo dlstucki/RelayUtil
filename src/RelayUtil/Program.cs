@@ -46,7 +46,7 @@ namespace RelayUtil
             }
             catch (Exception exception)
             {
-                RelayCommands.LogException(exception);
+                RelayTraceSource.TraceException(exception);
                 return exception.HResult;
             }
         }

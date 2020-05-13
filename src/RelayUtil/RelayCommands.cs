@@ -32,23 +32,6 @@ namespace RelayUtil
             return app;
         }
 
-        public static void LogException(Exception exception, string operation = "")
-        {
-            LogException(exception, TraceEventType.Error, operation);
-        }
-
-        public static void LogException(Exception exception, TraceEventType eventType, string operation)
-        {
-            operation = !string.IsNullOrEmpty(operation) ? operation + ": " : string.Empty;
-            if (exception is AggregateException aggregateException)
-            {
-                exception = aggregateException.GetBaseException();
-            }
-
-            RelayTraceSource.Instance.TraceEvent(eventType, 0, $"*** {operation}{exception.ToString().Split('\r')[0]} ***");
-            RelayTraceSource.TraceVerbose($"{operation}{exception}");
-        }
-
         public static bool GetBoolOption(CommandOption boolOption, bool defaultValue)
         {
             if (!boolOption.HasValue())
@@ -120,9 +103,10 @@ namespace RelayUtil
             }
         }
 
-        public static void TraceCommandHeader(string commandName)
+        public static void TraceCommandHeader(string commandName, TraceSource traceSource = null)
         {
-            RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"============================== {commandName} ==============================");
+            traceSource = traceSource ?? RelayTraceSource.Instance;
+            traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"============================== {commandName} ==============================");
         }
 
         static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)
