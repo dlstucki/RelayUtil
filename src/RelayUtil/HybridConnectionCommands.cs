@@ -210,7 +210,7 @@ namespace RelayUtil
                         return 1;
                     }
 
-                    return await HybridConnectionTests.RunAsync(new RelayConnectionStringBuilder(connectionString), RelayTraceSource.Instance);
+                    return await HybridConnectionTests.RunTestsAsync(new RelayConnectionStringBuilder(connectionString), RelayTraceSource.Instance);
                 });
             });
         }
