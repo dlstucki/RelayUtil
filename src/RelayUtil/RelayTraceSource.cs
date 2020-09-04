@@ -71,7 +71,7 @@ namespace RelayUtil
                 exception = aggregateException.GetBaseException();
             }
 
-            Instance.TraceEvent(eventType, 0, $"*** {operation}{exception.ToString().Split('\r')[0]} ***");
+            Instance.TraceEvent(eventType, 0, $"*** {operation}{exception?.ToString().Split('\r')[0]} ***");
             TraceVerbose($"{operation}{exception}");
         }
 
