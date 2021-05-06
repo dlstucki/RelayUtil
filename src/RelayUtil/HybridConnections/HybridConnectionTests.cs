@@ -15,6 +15,7 @@ namespace RelayUtil.HybridConnections
     using System.Threading.Tasks;
     using Microsoft.Azure.Relay;
     using Microsoft.Azure.Relay.Management;
+    using static RelayCommands;
 
     class HybridConnectionTests
     {
@@ -46,13 +47,13 @@ namespace RelayUtil.HybridConnections
                 {
                     client.DefaultRequestHeaders.ExpectContinue = false;
 
-                    await RunTestAsync("TestPostLargeRequestSmallResponse", traceSource, () => TestPostLargeRequestSmallResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestPostLargeRequestWithLargeResponse", traceSource, () => TestPostLargeRequestWithLargeResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestGetLargeResponse", traceSource, () => TestGetLargeResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestGetSmallResponse", traceSource, () => TestGetSmallResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestPostLargeRequestSmallResponse", () => TestPostLargeRequestSmallResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestPostLargeRequestWithLargeResponse", () => TestPostLargeRequestWithLargeResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestGetLargeResponse", () => TestGetLargeResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestGetSmallResponse", () => TestGetSmallResponse(listener, token, client, traceSource));
                 }
 
-                await RunTestAsync("TestStreaming", traceSource, () => TestStreaming(listener, connectionString, traceSource));
+                await RunTestAsync("TestStreaming", () => TestStreaming(listener, connectionString, traceSource));
 
                 //traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "All tests succeeded");
             }
@@ -92,21 +93,6 @@ namespace RelayUtil.HybridConnections
             }
 
             return returnCode;
-        }
-
-        static async Task RunTestAsync(string testName, TraceSource traceSource, Func<Task> testFunc)
-        {
-            RelayCommands.TraceCommandHeader(testName, traceSource);
-            try
-            {
-                await testFunc();
-                traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "Passed");
-            }
-            catch (Exception exception)
-            {
-                RelayTraceSource.TraceException(exception, testName);
-                traceSource.TraceError($"{testName}: FAILED");
-            }
         }
 
         static async Task TestGetSmallResponse(HybridConnectionListener listener, SecurityToken token, HttpClient client, TraceSource traceSource)

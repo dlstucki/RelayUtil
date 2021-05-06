@@ -17,6 +17,11 @@ namespace RelayUtil
             return traceSource;
         }
 
+        internal static void TraceEvent(TraceEventType eventType, ConsoleColor color, string message)
+        {
+            Instance.TraceEvent(eventType, (int)color, message);
+        }
+
         public static void TraceInfo(string message)
         {
             Instance.TraceInformation(message);

@@ -10,6 +10,7 @@ namespace RelayUtil
     using System.Reflection;
     using System.Security.Authentication;
     using System.Text;
+    using System.Threading.Tasks;
     using Microsoft.Extensions.CommandLineUtils;
 
     class RelayCommands
@@ -107,6 +108,21 @@ namespace RelayUtil
         {
             traceSource = traceSource ?? RelayTraceSource.Instance;
             traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"============================== {commandName} ==============================");
+        }
+
+        public static async Task RunTestAsync(string testName, Func<Task> testFunc)
+        {
+            TraceCommandHeader(testName);
+            try
+            {
+                await testFunc();
+                RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.Green, "Passed");
+            }
+            catch (Exception exception)
+            {
+                RelayTraceSource.TraceException(exception, testName);
+                RelayTraceSource.TraceError($"Test {testName}: FAILED");
+            }
         }
 
         static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)

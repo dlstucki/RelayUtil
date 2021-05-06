@@ -38,11 +38,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Microsoft.Azure.Relay">
-      <HintPath>..\..\..\..\One\ServiceBus\Messaging\out\debug-amd64\AppServer\Microsoft.Azure.Relay.dll</HintPath>
+      <HintPath>..\..\..\..\..\public\Relay\HybridConnection\Management\Microsoft.Azure.Relay.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.Azure.Relay.Management">
-      <HintPath>..\..\..\..\One\ServiceBus\Messaging\out\debug-amd64\AppServer\Microsoft.Azure.Relay.Management.dll</HintPath>
+      <HintPath>..\..\..\..\..\public\Relay\HybridConnection\Management\Microsoft.Azure.Relay.Management.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.Extensions.CommandLineUtils, Version=1.1.1.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
@@ -97,14 +97,14 @@
       <Link>Microsoft.Extensions.CommandLineUtils.dll</Link>
       <Visible>False</Visible>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\..\..\..\One\ServiceBus\Messaging\out\debug-amd64\AppServer\Microsoft.Azure.Relay.dll">
+    <EmbeddedResource Include="..\..\..\..\..\public\Relay\HybridConnection\Management\Microsoft.Azure.Relay.dll">
       <Type>Non-Resx</Type>
       <WithCulture>false</WithCulture>
       <LogicalName>.\Microsoft.Azure.Relay.dll</LogicalName>
       <Link>Microsoft.Azure.Relay.dll</Link>
       <Visible>False</Visible>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\..\..\..\One\ServiceBus\Messaging\out\debug-amd64\AppServer\Microsoft.Azure.Relay.Management.dll">
+    <EmbeddedResource Include="..\..\..\..\..\public\Relay\HybridConnection\Management\Microsoft.Azure.Relay.Management.dll">
       <Type>Non-Resx</Type>
       <WithCulture>false</WithCulture>
       <LogicalName>.\Microsoft.Azure.Relay.Management.dll</LogicalName>

@@ -3,10 +3,8 @@
 
 namespace RelayUtil
 {
-    using System;
     using System.Collections.Generic;
     using System.Net;
-    using System.Text;
     using Microsoft.Azure.Relay;
     using Microsoft.Azure.Relay.Management;
     using Microsoft.Extensions.CommandLineUtils;

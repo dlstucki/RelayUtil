@@ -14,9 +14,11 @@ namespace RelayUtil.WcfRelays
     using System.ServiceModel.Channels;
     using System.ServiceModel.Description;
     using System.ServiceModel.Web;
+    using System.Threading.Tasks;
     using Microsoft.Extensions.CommandLineUtils;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
+    using TokenProvider = Microsoft.ServiceBus.TokenProvider;
 
     class WcfRelayCommands : RelayCommands
     {
@@ -34,6 +36,7 @@ namespace RelayUtil.WcfRelays
                 ConfigureWcfDeleteCommand(wcfCommand);
                 ConfigureWcfListenCommand(wcfCommand);
                 ConfigureWcfSendCommand(wcfCommand);
+                ConfigureWcfTestCommand(wcfCommand);
 
                 wcfCommand.OnExecute(() =>
                 {
@@ -221,10 +224,34 @@ namespace RelayUtil.WcfRelays
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
                     Binding binding = GetBinding(bindingOption, noClientAuthOption);
                     ConnectivityMode connectivityMode = GetConnectivityMode(connectivityModeOption);
-                    return VerifySend(request, connectionStringBuilder.Endpoints.First().Host, path, number, binding, noClientAuthOption.HasValue(), connectivityMode, connectionStringBuilder.SharedAccessKeyName, connectionStringBuilder.SharedAccessKey);
+                    return VerifySend(request, connectionStringBuilder, path, number, binding, noClientAuthOption.HasValue(), connectivityMode);
                 });
             });
         }
+
+        static void ConfigureWcfTestCommand(CommandLineApplication hcCommand)
+        {
+            hcCommand.RelayCommand("test", (testCmd) =>
+            {
+                testCmd.Description = "WcfRelay tests";
+                var connectionStringArgument = testCmd.Argument("connectionString", "Relay ConnectionString");
+                var numberOption = testCmd.Option(CommandStrings.NumberTemplate, CommandStrings.NumberDescription, CommandOptionType.SingleValue);
+
+                testCmd.OnExecute(async () =>
+                {
+                    string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
+                    if (string.IsNullOrEmpty(connectionString))
+                    {
+                        testCmd.ShowHelp();
+                        return 1;
+                    }
+
+                    int number = GetIntOption(numberOption, 1);
+                    return await RunWcfTestsAsync(connectionString, number);
+                });
+            });
+        }
+
 
         static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)
         {
@@ -290,9 +317,13 @@ namespace RelayUtil.WcfRelays
             }
         }
 
-        public static int VerifySend(string request, string relayNamespace, string path, int number, Binding binding, bool noClientAuth, ConnectivityMode connectivityMode, string keyName, string keyValue)
+        public static int VerifySend(string request, ServiceBusConnectionStringBuilder connectionString, string path, int number, Binding binding, bool noClientAuth, ConnectivityMode connectivityMode)
         {
-            RelayTraceSource.TraceInfo($"Send to relay service using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
+            RelayTraceSource.TraceInfo($"Send to relay listener using {binding.GetType().Name}, ConnectivityMode.{connectivityMode}...");
+            string relayNamespace = connectionString.Endpoints.First().Host;
+            string keyName = connectionString.SharedAccessKeyName;
+            string keyValue = connectionString.SharedAccessKey;
+
             if (IsOneWay(binding))
             {
                 return VerifySendCore<ITestOnewayClient>(request, relayNamespace, path, number, binding, noClientAuth, connectivityMode, keyName, keyValue);
@@ -328,11 +359,11 @@ namespace RelayUtil.WcfRelays
                 }
 
                 channel = channelFactory.CreateChannel();
-                RelayTraceSource.TraceInfo($"Opening channel");
+                RelayTraceSource.TraceInfo("Sender opening channel");
                 var stopwatch = Stopwatch.StartNew();
                 channel.Open();
                 stopwatch.Stop();
-                RelayTraceSource.TraceInfo($"Opened channel in {stopwatch.ElapsedMilliseconds} ms");
+                RelayTraceSource.TraceVerbose($"Sender opened channel in {stopwatch.ElapsedMilliseconds} ms");
 
                 for (int i = 0; i < number; i++)
                 {
@@ -340,12 +371,12 @@ namespace RelayUtil.WcfRelays
                     if (channel is IEchoClient echoChannel)
                     {
                         string response = echoChannel.Echo(DateTime.UtcNow, request);
-                        RelayTraceSource.TraceInfo($"Response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
+                        RelayTraceSource.TraceInfo($"Sender received response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
                     }
                     else if (channel is ITestOnewayClient onewayClient)
                     {
                         onewayClient.Operation(DateTime.UtcNow, request);
-                        RelayTraceSource.TraceInfo($"Sent Oneway Request: {request} ({stopwatch.ElapsedMilliseconds} ms)");
+                        RelayTraceSource.TraceInfo($"Sender sent oneway request: {request} ({stopwatch.ElapsedMilliseconds} ms)");
                     }
                     else
                     {
@@ -353,10 +384,15 @@ namespace RelayUtil.WcfRelays
                     }
                 }
 
-                RelayTraceSource.TraceInfo($"Closing channel");
+                RelayTraceSource.TraceInfo("Sender closing channel");
+                stopwatch.Restart();
                 channel.Close();
+                RelayTraceSource.TraceVerbose($"Sender closed channel in {stopwatch.ElapsedMilliseconds} ms");
+
+                RelayTraceSource.TraceVerbose("Sender closing channel factory");
+                stopwatch.Restart();
                 channelFactory.Close();
-                RelayTraceSource.TraceInfo($"Closed");
+                RelayTraceSource.TraceVerbose($"Sender closed channel factory in {stopwatch.ElapsedMilliseconds} ms");
 
                 return 0;
             }
@@ -365,6 +401,170 @@ namespace RelayUtil.WcfRelays
                 channel?.Abort();
                 channelFactory?.Abort();
                 throw;
+            }
+        }
+
+        public static async Task<int> RunWcfTestsAsync(string connectionString, int numberOfRequests)
+        {
+            var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
+
+            #region NetTcpRelayBinding
+            connectionStringBuilder.EntityPath = "NetTcpRelayBinding_AutoConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetTcpRelayBinding(), ConnectivityMode.AutoDetect, default, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "NetTcpRelayBinding_TcpConnectivity_Persistent";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetTcpRelayBinding { IsDynamic = false }, ConnectivityMode.Tcp, RelayType.NetTcp, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "NetTcpRelayBinding_HttpsConnectivity_Persistent";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetTcpRelayBinding { IsDynamic = false }, ConnectivityMode.Https, RelayType.NetTcp, numberOfRequests));
+            #endregion
+
+            #region BasicHttpRelayBinding
+            connectionStringBuilder.EntityPath = "BasicHttpRelayBinding_AutoConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new BasicHttpRelayBinding(), ConnectivityMode.AutoDetect, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "BasicHttpRelayBinding_TcpConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new BasicHttpRelayBinding(), ConnectivityMode.Tcp, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "BasicHttpRelayBinding_HttpsConnectivity_Persistent";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new BasicHttpRelayBinding { IsDynamic = false }, ConnectivityMode.Https, RelayType.Http, numberOfRequests));
+            #endregion
+
+            #region WSHttpRelayBinding
+            connectionStringBuilder.EntityPath = "WSHttpRelayBinding_AutoConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new WS2007HttpRelayBinding(), ConnectivityMode.AutoDetect, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "WSHttpRelayBinding_TcpConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new WS2007HttpRelayBinding(), ConnectivityMode.Tcp, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "WSHttpRelayBinding_HttpsConnectivity_Dynamic";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new WS2007HttpRelayBinding(), ConnectivityMode.Https, null, numberOfRequests));
+            #endregion
+
+            #region NetOnewayRelayBinding
+            connectionStringBuilder.EntityPath = "NetOnewayRelayBinding_AutoConnectivity";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetOnewayRelayBinding(), ConnectivityMode.AutoDetect, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "NetOnewayRelayBinding_HttpsConnectivity";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetOnewayRelayBinding(), ConnectivityMode.Https, null, numberOfRequests));
+            #endregion
+
+            #region NetEventRelayBinding
+            connectionStringBuilder.EntityPath = "NetEventRelayBinding_TcpConnectivity";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetEventRelayBinding(), ConnectivityMode.Tcp, null, numberOfRequests));
+
+            connectionStringBuilder.EntityPath = "NetEventRelayBinding_HttpsConnectivity";
+            await RunTestAsync(
+                connectionStringBuilder.EntityPath,
+                () => RunBindingScenarioAsync(connectionStringBuilder, new NetEventRelayBinding(), ConnectivityMode.Https, null, numberOfRequests));
+            #endregion
+
+            return 0;
+        }
+
+        static async Task<int> RunBindingScenarioAsync(ServiceBusConnectionStringBuilder connectionString, Binding binding, ConnectivityMode connectivityMode, RelayType? createRelayOfType, int numberOfRequests)
+        {
+            Uri baseAddress = connectionString.Endpoints.First();
+            string relayNamespace = baseAddress.Host;
+            string path = connectionString.EntityPath;
+            var tp = TokenProvider.CreateSharedAccessSignatureTokenProvider(connectionString.SharedAccessKeyName, connectionString.SharedAccessKey);
+
+            ServiceHost serviceHost = null;
+            bool createdRelay = false;
+            try
+            {
+                if (createRelayOfType.HasValue)
+                {
+                    RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.White, $"Creating WcfRelay '{path}'");
+                    var relayDescription = new RelayDescription(path, createRelayOfType.Value);
+                    var namespaceManager = new NamespaceManager(connectionString.Endpoints.First(), tp);
+                    namespaceManager.Settings.OperationTimeout = TimeSpan.FromSeconds(20);
+                    await namespaceManager.CreateRelayAsync(relayDescription);
+                    createdRelay = true;
+                    RelayTraceSource.TraceVerbose("Creating WcfRelay succeeded");
+                }
+
+                ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
+                if (!(binding is WebHttpRelayBinding))
+                {
+                    serviceHost = new ServiceHost(new WcfEchoService("ResponsePayload"));
+                }
+                else
+                {
+                    serviceHost = new WebServiceHost(new WcfEchoService("ResponsePayload"));
+                }
+
+                Type contractType = IsOneWay(binding) ? typeof(ITestOneway) : typeof(IEcho);
+                ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(contractType, binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
+                endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
+
+                // Trace status changes
+                var connectionStatus = new ConnectionStatusBehavior();
+                connectionStatus.Connecting += (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, TraceEventType.Warning, "Relay listener Re-Connecting");
+                connectionStatus.Online += (s, e) => RelayTraceSource.Instance.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "Relay Listener is online");
+                EventHandler offlineHandler = (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, TraceEventType.Warning, "Relay Listener is OFFLINE");
+                connectionStatus.Offline += offlineHandler;
+                endpoint.EndpointBehaviors.Add(connectionStatus);
+                serviceHost.Faulted += (s, e) => RelayTraceSource.TraceException(connectionStatus.LastError, TraceEventType.Warning, "Relay listener ServiceHost Faulted");
+
+                RelayTraceSource.TraceInfo($"Opening relay listener \"{endpoint.Address.Uri}\"");
+                serviceHost.Open();
+                RelayTraceSource.TraceVerbose($"Opening relay listener succeeded");
+
+                VerifySend("RequestPayload", connectionString, path, numberOfRequests, binding, false, connectivityMode);
+
+                RelayTraceSource.TraceInfo("Closing relay listener");
+                connectionStatus.Offline -= offlineHandler; // Avoid a spurious trace on expected shutdown.
+                serviceHost.Close();
+                RelayTraceSource.TraceVerbose("Closing relay listener succeeded");
+                return 0;
+            }
+            catch (Exception e)
+            {
+                RelayTraceSource.TraceError($"Test Encountered {e.GetType()}");
+                serviceHost?.Abort();
+                throw;
+            }
+            finally
+            {
+                if (createdRelay)
+                {
+                    try
+                    {
+                        RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.White, $"Deleting WcfRelay '{path}'");
+                        var namespaceManager = new NamespaceManager(baseAddress, tp);
+                        await namespaceManager.DeleteRelayAsync(path);
+                        RelayTraceSource.TraceVerbose($"Deleting WcfRelay '{path}' succeeded");
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        RelayTraceSource.TraceWarning($"Error during cleanup: {cleanupException.GetType()}: {cleanupException.Message}");
+                    }
+                }
             }
         }
 
@@ -541,7 +741,7 @@ namespace RelayUtil.WcfRelays
                     duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
                 }
 
-                RelayTraceSource.TraceInfo($"Echo Request: {message} {duration}");
+                RelayTraceSource.TraceInfo($"Listener received request: Echo({message}) {duration}");
                 return this.response ?? message;
             }
 
@@ -553,7 +753,7 @@ namespace RelayUtil.WcfRelays
                     duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
                 }
 
-                RelayTraceSource.TraceInfo($"Get Request: {message} {duration}");
+                RelayTraceSource.TraceInfo($"Listener received request: Get({message}) {duration}");
                 return this.response ?? DateTime.UtcNow.ToString("o");
             }
 
@@ -565,7 +765,7 @@ namespace RelayUtil.WcfRelays
                     duration = $"({(int)DateTime.UtcNow.Subtract(start).TotalMilliseconds}ms from start)";
                 }
 
-                RelayTraceSource.TraceInfo($"ITestOneway.Operation: {message} {duration}");
+                RelayTraceSource.TraceInfo($"Listener received request: ITestOneway.Operation({message}) {duration}");
             }
         }
     }
