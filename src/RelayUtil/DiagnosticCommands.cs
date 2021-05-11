@@ -114,7 +114,7 @@ namespace RelayUtil
             TraceCommandHeader("Ports");
             if (string.IsNullOrEmpty(namespaceDetails.ServiceNamespace))
             {
-                RelayTraceSource.TraceError($"{NamespaceOrConnectionStringArgumentDescription} is required");
+                TraceMissingArgument(NamespaceOrConnectionStringArgumentDescription);
                 return;
             }
 
@@ -157,7 +157,7 @@ namespace RelayUtil
 
             if (!foundAny)
             {
-                RelayTraceSource.TraceWarning($"{NamespaceOrConnectionStringArgumentDescription} is required");
+                TraceMissingArgument(NamespaceOrConnectionStringArgumentDescription);
             }
         }
 

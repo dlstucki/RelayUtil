@@ -51,6 +51,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
+                        TraceMissingArgument(string.IsNullOrEmpty(connectionString) ? connectionStringArgument.Name : pathArgument.Name);
                         createCmd.ShowHelp();
                         return 1;
                     }
@@ -79,6 +80,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         listCmd.ShowHelp();
                         return 1;
                     }
@@ -111,6 +113,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
+                        TraceMissingArgument(string.IsNullOrEmpty(connectionString) ? connectionStringArgument.Name : pathArgument.Name);
                         deleteCmd.ShowHelp();
                         return 1;
                     }
@@ -144,6 +147,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         listenCmd.ShowHelp();
                         return 1;
                     }
@@ -176,6 +180,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         sendCmd.ShowHelp();
                         return 1;
                     }
@@ -204,6 +209,7 @@ namespace RelayUtil
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         testCmd.ShowHelp();
                         return 1;
                     }

@@ -104,6 +104,11 @@ namespace RelayUtil
             }
         }
 
+        public static void TraceMissingArgument(string argumentName)
+        {
+            RelayTraceSource.TraceError($"*** Error: {argumentName} is required ***");
+        }
+
         public static void TraceCommandHeader(string commandName, TraceSource traceSource = null)
         {
             traceSource = traceSource ?? RelayTraceSource.Instance;

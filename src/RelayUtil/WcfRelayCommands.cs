@@ -67,6 +67,7 @@ namespace RelayUtil.WcfRelays
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
+                        TraceMissingArgument(string.IsNullOrEmpty(connectionString) ? connectionStringArgument.Name : pathArgument.Name);
                         createCmd.ShowHelp();
                         return 1;
                     }
@@ -97,6 +98,7 @@ namespace RelayUtil.WcfRelays
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         listCmd.ShowHelp();
                         return 1;
                     }
@@ -131,6 +133,7 @@ namespace RelayUtil.WcfRelays
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString) || string.IsNullOrEmpty(pathArgument.Value))
                     {
+                        TraceMissingArgument(string.IsNullOrEmpty(connectionString) ? connectionStringArgument.Name : pathArgument.Name);
                         deleteCmd.ShowHelp();
                         return 1;
                     }
@@ -167,6 +170,7 @@ namespace RelayUtil.WcfRelays
                     string path = pathArgument.Value ?? DefaultPath;
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         listenCmd.ShowHelp();
                         return 1;
                     }
@@ -216,6 +220,7 @@ namespace RelayUtil.WcfRelays
                     string request = GetStringOption(requestOption, "Test Message Data");
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         sendCmd.ShowHelp();
                         return 1;
                     }
@@ -229,9 +234,9 @@ namespace RelayUtil.WcfRelays
             });
         }
 
-        static void ConfigureWcfTestCommand(CommandLineApplication hcCommand)
+        static void ConfigureWcfTestCommand(CommandLineApplication wcfCommand)
         {
-            hcCommand.RelayCommand("test", (testCmd) =>
+            wcfCommand.RelayCommand("test", (testCmd) =>
             {
                 testCmd.Description = "WcfRelay tests";
                 var connectionStringArgument = testCmd.Argument("connectionString", "Relay ConnectionString");
@@ -242,6 +247,7 @@ namespace RelayUtil.WcfRelays
                     string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
                     if (string.IsNullOrEmpty(connectionString))
                     {
+                        TraceMissingArgument(connectionStringArgument.Name);
                         testCmd.ShowHelp();
                         return 1;
                     }
