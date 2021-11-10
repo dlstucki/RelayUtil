@@ -34,6 +34,7 @@ namespace RelayUtil.WcfRelays
                 ConfigureWcfCreateCommand(wcfCommand);
                 ConfigureWcfListCommand(wcfCommand);
                 ConfigureWcfDeleteCommand(wcfCommand);
+                ConfigureWcfCountCommand(wcfCommand);
                 ConfigureWcfListenCommand(wcfCommand);
                 ConfigureWcfSendCommand(wcfCommand);
                 ConfigureWcfTestCommand(wcfCommand);
@@ -143,6 +144,40 @@ namespace RelayUtil.WcfRelays
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                     await namespaceManager.DeleteRelayAsync(pathArgument.Value);
                     RelayTraceSource.TraceInfo($"Deleting WcfRelay '{pathArgument.Value}' in {connectionStringBuilder.Endpoints.First().Host} succeeded");
+                    return 0;
+                });
+            });
+        }
+
+        static void ConfigureWcfCountCommand(CommandLineApplication wcfCommand)
+        {
+            wcfCommand.RelayCommand("count", (countCommand) =>
+            {
+                countCommand.Description = "Get WCF Relay Count";
+
+                var connectionStringArgument = countCommand.Argument("connectionString", "Relay ConnectionString");
+
+                countCommand.OnExecute(async () =>
+                {
+                    string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
+                    if (string.IsNullOrEmpty(connectionString))
+                    {
+                        TraceMissingArgument(connectionStringArgument.Name);
+                        countCommand.ShowHelp();
+                        return 1;
+                    }
+
+                    var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
+                    Uri namespaceUri = namespaceManager.Address;
+                    string namespaceHost = namespaceUri.Host;
+                    var tokenProvider = namespaceManager.Settings.TokenProvider;
+
+                    RelayTraceSource.TraceVerbose($"Getting WcfRelay count for '{namespaceUri}");
+
+                    int count = await NamespaceUtility.GetEntityCountAsync(namespaceUri, tokenProvider, "Relays");
+                    RelayTraceSource.TraceInfo(string.Format($"{{0,-{namespaceHost.Length}}}  {{1}}", "Namespace", "WcfRelayCount"));
+                    RelayTraceSource.TraceInfo(string.Format($"{{0,-{namespaceHost.Length}}}  {{1}}", namespaceHost, count));
+
                     return 0;
                 });
             });

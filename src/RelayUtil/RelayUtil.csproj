@@ -8,7 +8,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>RelayUtil</RootNamespace>
     <AssemblyName>RelayUtil</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
@@ -87,6 +87,7 @@
     <Compile Include="WcfRelayCommands.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

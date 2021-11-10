@@ -3,6 +3,7 @@
 
 namespace RelayUtil
 {
+    using System;
     using System.Collections.Generic;
     using System.Net;
     using Microsoft.Azure.Relay;
@@ -22,6 +23,7 @@ namespace RelayUtil
                 ConfigureCreateCommand(hcCommand);
                 ConfigureListCommand(hcCommand);
                 ConfigureDeleteCommand(hcCommand);
+                ConfigureCountCommand(hcCommand);
                 ConfigureListenCommand(hcCommand);
                 ConfigureSendCommand(hcCommand);
                 ConfigureTestCommand(hcCommand);
@@ -123,6 +125,40 @@ namespace RelayUtil
                     var namespaceManager = new RelayNamespaceManager(connectionString);
                     await namespaceManager.DeleteHybridConnectionAsync(pathArgument.Value);
                     RelayTraceSource.TraceInfo($"Deleting HybridConnection '{pathArgument.Value}' in {connectionStringBuilder.Endpoint.Host} succeeded");
+                    return 0;
+                });
+            });
+        }
+
+        static void ConfigureCountCommand(CommandLineApplication hcCommand)
+        {
+            hcCommand.RelayCommand("count", (countCommand) =>
+            {
+                countCommand.Description = "Get HybridConnection Count";
+
+                var connectionStringArgument = countCommand.Argument("connectionString", "Relay ConnectionString");
+
+                countCommand.OnExecute(async () =>
+                {
+                    string connectionString = ConnectionStringUtility.ResolveConnectionString(connectionStringArgument);
+                    if (string.IsNullOrEmpty(connectionString))
+                    {
+                        TraceMissingArgument(connectionStringArgument.Name);
+                        countCommand.ShowHelp();
+                        return 1;
+                    }
+
+                    var namespaceManager = Microsoft.ServiceBus.NamespaceManager.CreateFromConnectionString(connectionString);
+                    Uri namespaceUri = namespaceManager.Address;
+                    string namespaceHost = namespaceUri.Host;
+                    var tokenProvider = namespaceManager.Settings.TokenProvider;
+
+                    RelayTraceSource.TraceVerbose($"Getting HybridConnection count for '{namespaceUri}");
+
+                    int count = await NamespaceUtility.GetEntityCountAsync(namespaceUri, tokenProvider, "HybridConnections");
+                    RelayTraceSource.TraceInfo(string.Format($"{{0,-{namespaceHost.Length}}}  {{1}}", "Namespace", "HybridConnectionCount"));
+                    RelayTraceSource.TraceInfo(string.Format($"{{0,-{namespaceHost.Length}}}  {{1}}", namespaceHost, count));
+
                     return 0;
                 });
             });

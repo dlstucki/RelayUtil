@@ -4,9 +4,13 @@
 namespace RelayUtil
 {
     using System;
+    using System.Linq;
     using System.Net;
+    using System.Net.Http;
     using System.Text.RegularExpressions;
     using System.Threading.Tasks;
+    using System.Xml.Linq;
+    using Microsoft.ServiceBus;
 
     struct NamespaceDetails
     {
@@ -65,6 +69,33 @@ namespace RelayUtil
             }
 
             return details;
+        }
+
+        public static async Task<int> GetEntityCountAsync(Uri namespaceUri, TokenProvider tokenProvider, string collectionName = "Relays")
+        {
+            if (namespaceUri.Scheme != Uri.UriSchemeHttps)
+            {
+                // Need https:// for HttpClient
+                namespaceUri = new UriBuilder(namespaceUri) { Scheme = Uri.UriSchemeHttps }.Uri;
+            }
+
+            string webToken = await tokenProvider.GetWebTokenAsync(namespaceUri.AbsoluteUri, string.Empty, false, TimeSpan.FromMinutes(20));
+            using (var httpClient = new HttpClient())
+            {
+                Uri resourceUri = new Uri(namespaceUri, $"/$Resources/{collectionName}/?$top=0&$inlinecount=allpages&api-version=2017-04");
+                var httpRequest = new HttpRequestMessage();
+                httpRequest.RequestUri = resourceUri;
+                httpRequest.Headers.Add("X-Process-At", "ServiceBus");
+                httpRequest.Headers.Add("ServiceBusAuthorization", webToken);
+                using (var httpResponse = await httpClient.SendAsync(httpRequest))
+                {
+                    httpResponse.EnsureSuccessStatusCode();
+                    string responseBody = await httpResponse.Content.ReadAsStringAsync();
+                    var document = XDocument.Parse(responseBody);
+                    XElement countElement = document.Descendants(XName.Get("count", "http://schemas.microsoft.com/netservices/2010/10/servicebus/connect")).First();
+                    return int.Parse(countElement.Value);
+                }
+            }
         }
     }
 }
