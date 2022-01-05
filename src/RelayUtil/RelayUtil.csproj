@@ -50,8 +50,8 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.ServiceBus, Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\WindowsAzure.ServiceBus.4.1.11\lib\net45\Microsoft.ServiceBus.dll</HintPath>
       <Private>False</Private>
+      <HintPath>..\..\packages\WindowsAzure.ServiceBus.6.2.0\lib\net462\Microsoft.ServiceBus.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
@@ -112,7 +112,7 @@
       <Link>Microsoft.Azure.Relay.Management.dll</Link>
       <Visible>False</Visible>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\..\packages\WindowsAzure.ServiceBus.4.1.11\lib\net45\Microsoft.ServiceBus.dll">
+    <EmbeddedResource Include="..\..\packages\WindowsAzure.ServiceBus.6.2.0\lib\net462\Microsoft.ServiceBus.dll">
       <Type>Non-Resx</Type>
       <WithCulture>false</WithCulture>
       <LogicalName>.\Microsoft.ServiceBus.dll</LogicalName>

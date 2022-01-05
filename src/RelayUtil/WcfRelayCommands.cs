@@ -15,6 +15,7 @@ namespace RelayUtil.WcfRelays
     using System.ServiceModel.Description;
     using System.ServiceModel.Web;
     using System.Threading.Tasks;
+    using System.Xml;
     using Microsoft.Extensions.CommandLineUtils;
     using Microsoft.ServiceBus;
     using Microsoft.ServiceBus.Messaging;
@@ -90,6 +91,7 @@ namespace RelayUtil.WcfRelays
             wcfCommand.RelayCommand("list", (listCmd) =>
             {
                 listCmd.Description = "List WcfRelay(s)";
+                var pathArgument = listCmd.Argument("path", "Optional WcfRelay path");
                 var connectionStringArgument = listCmd.Argument("connectionString", "Relay ConnectionString");
                 var protocolOption = listCmd.AddSecurityProtocolOption();
 
@@ -104,10 +106,22 @@ namespace RelayUtil.WcfRelays
                         return 1;
                     }
 
+                    string path = pathArgument.Value;
+
                     var connectionStringBuilder = new ServiceBusConnectionStringBuilder(connectionString);
-                    RelayTraceSource.TraceInfo($"Listing WcfRelays for {connectionStringBuilder.Endpoints.First().Host}");
                     var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
-                    IEnumerable<RelayDescription> relays = await namespaceManager.GetRelaysAsync();
+                    IEnumerable<RelayDescription> relays;
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        RelayTraceSource.TraceInfo($"Listing WcfRelays for {connectionStringBuilder.Endpoints.First().Host}");
+                        relays = await namespaceManager.GetRelaysAsync();
+                    }
+                    else
+                    {
+                        RelayTraceSource.TraceInfo($"Getting WcfRelay {connectionStringBuilder.Endpoints.First().Host}/{path}");
+                        relays = new[] { await namespaceManager.GetRelayAsync(path) };
+                    }
+
                     RelayTraceSource.TraceInfo($"{"Path",-38} {"ListenerCount",-15} {"RequiresClientAuth",-20} RelayType");
                     foreach (var relay in relays)
                     {
@@ -329,7 +343,9 @@ namespace RelayUtil.WcfRelays
 
                 Type contractType = IsOneWay(binding) ? typeof(ITestOneway) : typeof(IEcho);
                 ServiceEndpoint endpoint = serviceHost.AddServiceEndpoint(contractType, binding, new Uri($"{binding.Scheme}://{relayNamespace}/{path}"));
-                endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp));
+                var listenerActivityId = Guid.NewGuid();
+                RelayTraceSource.TraceVerbose($"Listener ActivityId:{listenerActivityId}");
+                endpoint.EndpointBehaviors.Add(new TransportClientEndpointBehavior(tp) { ActivityId = listenerActivityId });
 
                 // Trace status changes
                 var connectionStatus = new ConnectionStatusBehavior();
@@ -401,27 +417,42 @@ namespace RelayUtil.WcfRelays
 
                 channel = channelFactory.CreateChannel();
                 RelayTraceSource.TraceInfo("Sender opening channel");
-                var stopwatch = Stopwatch.StartNew();
-                channel.Open();
-                stopwatch.Stop();
-                RelayTraceSource.TraceVerbose($"Sender opened channel in {stopwatch.ElapsedMilliseconds} ms");
+                var stopwatch = new Stopwatch();
+                using (new OperationContextScope(channel))
+                {
+                    Guid trackingId = Guid.NewGuid();
+                    RelayTraceSource.TraceVerbose($"Channel TrackingId:{trackingId}");
+                    OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(trackingId);
+
+                    stopwatch.Restart();
+                    channel.Open();
+                    stopwatch.Stop();
+                    RelayTraceSource.TraceVerbose($"Sender opened channel in {stopwatch.ElapsedMilliseconds} ms");
+                }
 
                 for (int i = 0; i < number; i++)
                 {
-                    stopwatch.Restart();
-                    if (channel is IEchoClient echoChannel)
+                    using (new OperationContextScope(channel))
                     {
-                        string response = echoChannel.Echo(DateTime.UtcNow, request);
-                        RelayTraceSource.TraceInfo($"Sender received response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
-                    }
-                    else if (channel is ITestOnewayClient onewayClient)
-                    {
-                        onewayClient.Operation(DateTime.UtcNow, request);
-                        RelayTraceSource.TraceInfo($"Sender sent oneway request: {request} ({stopwatch.ElapsedMilliseconds} ms)");
-                    }
-                    else
-                    {
-                        throw new NotSupportedException($"Contract {typeof(TChannel)} is not supported");
+                        var messageId = Guid.NewGuid();
+                        RelayTraceSource.TraceVerbose($"Sending MessageId:{messageId}");
+                        OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(messageId);
+
+                        stopwatch.Restart();
+                        if (channel is IEchoClient echoChannel)
+                        {
+                            string response = echoChannel.Echo(DateTime.UtcNow, request);
+                            RelayTraceSource.TraceInfo($"Sender received response: {response} ({stopwatch.ElapsedMilliseconds} ms)");
+                        }
+                        else if (channel is ITestOnewayClient onewayClient)
+                        {
+                            onewayClient.Operation(DateTime.UtcNow, request);
+                            RelayTraceSource.TraceInfo($"Sender sent oneway request: {request} ({stopwatch.ElapsedMilliseconds} ms)");
+                        }
+                        else
+                        {
+                            throw new NotSupportedException($"Contract {typeof(TChannel)} is not supported");
+                        }
                     }
                 }
 
@@ -429,19 +460,20 @@ namespace RelayUtil.WcfRelays
                 stopwatch.Restart();
                 channel.Close();
                 RelayTraceSource.TraceVerbose($"Sender closed channel in {stopwatch.ElapsedMilliseconds} ms");
+                channel = null;
 
                 RelayTraceSource.TraceVerbose("Sender closing channel factory");
                 stopwatch.Restart();
                 channelFactory.Close();
                 RelayTraceSource.TraceVerbose($"Sender closed channel factory in {stopwatch.ElapsedMilliseconds} ms");
+                channelFactory = null;
 
                 return 0;
             }
-            catch (Exception)
+            finally
             {
                 channel?.Abort();
                 channelFactory?.Abort();
-                throw;
             }
         }
 
@@ -783,6 +815,8 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: Echo({message}) {duration}");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
+
                 return this.response ?? message;
             }
 
@@ -795,6 +829,7 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: Get({message}) {duration}");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
                 return this.response ?? DateTime.UtcNow.ToString("o");
             }
 
@@ -807,6 +842,7 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: ITestOneway.Operation({message}) {duration}");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
             }
         }
     }
