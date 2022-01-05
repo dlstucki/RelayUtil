@@ -332,13 +332,14 @@ namespace RelayUtil.WcfRelays
 
                 string relayNamespace = connectionStringBuilder.Endpoints.First().Host;
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
+                WcfEchoService.DefaultResponse = response;
                 if (!(binding is WebHttpRelayBinding))
                 {
-                    serviceHost = new ServiceHost(new WcfEchoService(response));
+                    serviceHost = new ServiceHost(typeof(WcfEchoService));
                 }
                 else
                 {
-                    serviceHost = new WebServiceHost(new WcfEchoService(response));
+                    serviceHost = new WebServiceHost(typeof(WcfEchoService));
                 }
 
                 Type contractType = IsOneWay(binding) ? typeof(ITestOneway) : typeof(IEcho);
@@ -427,7 +428,8 @@ namespace RelayUtil.WcfRelays
                     stopwatch.Restart();
                     channel.Open();
                     stopwatch.Stop();
-                    RelayTraceSource.TraceVerbose($"Sender opened channel in {stopwatch.ElapsedMilliseconds} ms");
+                    RelayTraceSource.TraceVerbose($"Sender opened channel in {stopwatch.ElapsedMilliseconds} ms");                    
+                    RelayTraceSource.TraceVerbose($"Channel SessionId:{channel.SessionId}");
                 }
 
                 for (int i = 0; i < number; i++)
@@ -582,13 +584,14 @@ namespace RelayUtil.WcfRelays
                 }
 
                 ServiceBusEnvironment.SystemConnectivity.Mode = connectivityMode;
+                WcfEchoService.DefaultResponse = "ResponsePayload";
                 if (!(binding is WebHttpRelayBinding))
                 {
-                    serviceHost = new ServiceHost(new WcfEchoService("ResponsePayload"));
+                    serviceHost = new ServiceHost(typeof(WcfEchoService));
                 }
                 else
                 {
-                    serviceHost = new WebServiceHost(new WcfEchoService("ResponsePayload"));
+                    serviceHost = new WebServiceHost(typeof(WcfEchoService));
                 }
 
                 Type contractType = IsOneWay(binding) ? typeof(ITestOneway) : typeof(IEcho);
@@ -760,7 +763,7 @@ namespace RelayUtil.WcfRelays
             return binding is NetOnewayRelayBinding || binding is NetEventRelayBinding;
         }
 
-        [ServiceContract]
+        [ServiceContract(SessionMode = SessionMode.Allowed)]
         interface IEcho
         {
             /// <summary>
@@ -787,7 +790,7 @@ namespace RelayUtil.WcfRelays
 
         interface IEchoClient : IEcho, IClientChannel { }
 
-        [ServiceContract]
+        [ServiceContract(SessionMode = SessionMode.Allowed)]
         interface ITestOneway
         {
             [OperationContract(IsOneWay=true)]
@@ -796,14 +799,21 @@ namespace RelayUtil.WcfRelays
 
         interface ITestOnewayClient : ITestOneway, IClientChannel { }
 
-        [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, ConcurrencyMode = ConcurrencyMode.Multiple)]
-        sealed class WcfEchoService : IEcho, ITestOneway
+        [ServiceBehavior(InstanceContextMode = InstanceContextMode.PerSession, ConcurrencyMode = ConcurrencyMode.Multiple)]
+        sealed class WcfEchoService : IEcho, ITestOneway, IDisposable
         {
-            readonly string response;
+            public static string DefaultResponse { get; set; }
+            readonly string sessionId;
 
-            public WcfEchoService(string response)
+            public WcfEchoService()
             {
-                this.response = response;
+                this.sessionId = OperationContext.Current?.Channel?.SessionId;
+                RelayTraceSource.TraceVerbose($"{nameof(WcfEchoService)} instance created. {this.sessionId}");
+            }
+
+            public void Dispose()
+            {
+                RelayTraceSource.TraceVerbose($"{nameof(WcfEchoService)} instance disposed. {this.sessionId}");
             }
 
             public string Echo(DateTime start, string message)
@@ -815,9 +825,9 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: Echo({message}) {duration}");
-                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}, SessionId: {this.sessionId}");
 
-                return this.response ?? message;
+                return DefaultResponse ?? message;
             }
 
             public string Get(DateTime start, string message)
@@ -829,8 +839,8 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: Get({message}) {duration}");
-                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
-                return this.response ?? DateTime.UtcNow.ToString("o");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}, SessionId: {this.sessionId}");
+                return DefaultResponse ?? DateTime.UtcNow.ToString("o");
             }
 
             void ITestOneway.Operation(DateTime start, string message)
@@ -842,7 +852,7 @@ namespace RelayUtil.WcfRelays
                 }
 
                 RelayTraceSource.TraceInfo($"Listener received request: ITestOneway.Operation({message}) {duration}");
-                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}");
+                RelayTraceSource.TraceVerbose($"Request MessageId:{OperationContext.Current.IncomingMessageHeaders.MessageId}, SessionId: {this.sessionId}");
             }
         }
     }
