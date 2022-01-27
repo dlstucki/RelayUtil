@@ -70,7 +70,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ColorConsole.cs" />
+    <Compile Include="Utilities\ColorConsole.cs" />
     <Compile Include="CommandStrings.cs" />
     <Compile Include="RelayCommandLineApplicationExtensions.cs" />
     <Compile Include="RelayCommands.cs" />
@@ -85,6 +85,9 @@
     <Compile Include="Utilities\NamespaceUtility.cs" />
     <Compile Include="Utilities\SupportFiles.cs" />
     <Compile Include="WcfRelayCommands.cs" />
+    <Compile Include="WcfRelays\EchoService.cs" />
+    <Compile Include="WcfRelays\IEcho.cs" />
+    <Compile Include="WcfRelays\ITestOneWay.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
