@@ -443,7 +443,10 @@ namespace RelayUtil.WcfRelays
                 {
                     Guid trackingId = Guid.NewGuid();
                     RelayTraceSource.TraceVerbose($"Channel TrackingId:{trackingId}");
-                    OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(trackingId);
+                    if (binding.MessageVersion.Addressing != AddressingVersion.None)
+                    {
+                        OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(trackingId);
+                    }
 
                     stopwatch.Restart();
                     channel.Open();
@@ -457,7 +460,10 @@ namespace RelayUtil.WcfRelays
                     {
                         var messageId = Guid.NewGuid();
                         RelayTraceSource.TraceVerbose($"Sending MessageId:{messageId}");
-                        OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(messageId);
+                        if (binding.MessageVersion.Addressing != AddressingVersion.None)
+                        {
+                            OperationContext.Current.OutgoingMessageHeaders.MessageId = new UniqueId(messageId);
+                        }
 
                         stopwatch.Restart();
                         if (channel is IEchoClient echoChannel)
