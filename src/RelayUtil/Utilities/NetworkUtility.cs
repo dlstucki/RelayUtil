@@ -21,16 +21,18 @@ namespace RelayUtil
         public static async Task<string> VerifyRelayPortsAsync(string hostName)
         {
             var stringBuilder = new StringBuilder();
-            stringBuilder.Append($"Checking {hostName} ");
+            stringBuilder.AppendLine($"Checking {hostName} ");
             try
             {
                 IPHostEntry ipHostEntry = await Dns.GetHostEntryAsync(hostName);
-                stringBuilder.AppendLine($"({ipHostEntry.AddressList[0]})");
                 var tasks = new List<Task<string>>();
-                foreach (int port in RelayPorts)
+                foreach (var address in ipHostEntry.AddressList)
                 {
-                    var ipEndpoint = new IPEndPoint(ipHostEntry.AddressList[0], port);
-                    tasks.Add(ProbeTcpPortAsync(ipEndpoint));
+                    foreach (int port in RelayPorts)
+                    {
+                        var ipEndpoint = new IPEndPoint(address, port);
+                        tasks.Add(ProbeTcpPortAsync(ipEndpoint));
+                    }
                 }
 
                 foreach (Task<string> task in tasks)
