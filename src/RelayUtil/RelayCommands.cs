@@ -4,12 +4,14 @@
 namespace RelayUtil
 {
     using System;
+    using System.Collections.Generic;
     using System.Diagnostics;
     using System.Linq;
     using System.Net;
     using System.Reflection;
     using System.Security.Authentication;
     using System.Text;
+    using System.Text.RegularExpressions;
     using System.Threading.Tasks;
     using Microsoft.Extensions.CommandLineUtils;
 
@@ -112,22 +114,60 @@ namespace RelayUtil
         public static void TraceCommandHeader(string commandName, TraceSource traceSource = null)
         {
             traceSource = traceSource ?? RelayTraceSource.Instance;
-            traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.White, $"============================== {commandName} ==============================");
+            traceSource.TraceEvent(TraceEventType.Warning, (int)ConsoleColor.White, $"========== {commandName} ==========");
         }
 
-        public static async Task RunTestAsync(string testName, Func<Task> testFunc)
+        internal static async Task RunTestAsync(string testName, Regex testNameRegex, IList<TestResult> testResults, Func<Task> testFunc)
         {
+            if (testNameRegex != null && !testNameRegex.IsMatch(testName))
+            {
+                // Filter specified and test name doesn't match
+                return;
+            }
+
             TraceCommandHeader(testName);
             try
             {
                 await testFunc();
-                RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.Green, "Passed");
+                testResults.Add(new TestResult { Passed = true, TestName = testName });
             }
             catch (Exception exception)
             {
                 RelayTraceSource.TraceException(exception, testName);
-                RelayTraceSource.TraceError($"Test {testName}: FAILED");
+                testResults.Add(new TestResult { Passed = false, TestName = testName });
             }
+        }
+
+        internal static int ReportTestResults(List<TestResult> testResults)
+        {
+            IEnumerable<string> passedTests = testResults.Where(r => r.Passed).Select(r => r.TestName);
+            IEnumerable<string> failedTests = testResults.Where(r => !r.Passed).Select(r => r.TestName);
+
+            int passCount = 0;
+            foreach (var passedTest in passedTests)
+            {
+                RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.Green, $"PASSED: {passedTest}");
+                passCount++;
+            }
+
+            if (passCount > 0)
+            {
+                RelayTraceSource.TraceEvent(TraceEventType.Information, ConsoleColor.Green, $"{passCount} tests passed.");
+            }
+
+            int failCount = 0;
+            foreach (var failedTest in failedTests)
+            {
+                RelayTraceSource.TraceEvent(TraceEventType.Error, ConsoleColor.Red, $"FAILED: {failedTest}");
+                failCount++;
+            }
+
+            if (failCount > 0)
+            {
+                RelayTraceSource.TraceEvent(TraceEventType.Error, ConsoleColor.Red, $"{failCount} tests failed");
+            }
+
+            return failCount;
         }
 
         static void SetServicePointManagerDefaultSslProtocols(SslProtocols sslProtocols)
@@ -141,6 +181,13 @@ namespace RelayUtil
             {
                 RelayTraceSource.TraceWarning("ServicePointManager.s_defaultSslProtocols field not found.");
             }
+        }
+
+        internal sealed class TestResult
+        {
+            public bool Passed { get; set; }
+
+            public string TestName { get; set; }
         }
     }
 }

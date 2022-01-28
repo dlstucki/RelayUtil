@@ -112,8 +112,18 @@ namespace RelayUtil
                     case TraceEventType.Error:
                         return ConsoleColor.Red;
                     case TraceEventType.Warning:
+                        if (id != 0)
+                        {
+                            return (ConsoleColor)id;
+                        }
+
                         return ConsoleColor.Yellow;
                     case TraceEventType.Verbose:
+                        if (id != 0)
+                        {
+                            return (ConsoleColor)id;
+                        }
+
                         return ConsoleColor.DarkGray;
                     case TraceEventType.Start:
                         return ConsoleColor.White;

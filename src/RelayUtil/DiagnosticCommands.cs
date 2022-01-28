@@ -176,7 +176,7 @@ namespace RelayUtil
         static async Task ExecutePlatformCommandAsync(NamespaceDetails namespaceDetails)
         {
             TraceCommandHeader("OS/Platform");
-            RelayTraceSource.TraceInfo("OSVersion:", Environment.OSVersion);
+            RelayTraceSource.TraceInfo(OutputFormat, "OSVersion:", Environment.OSVersion);
             RelayTraceSource.TraceInfo(OutputFormat, "ProcessorCount:", Environment.ProcessorCount);
             RelayTraceSource.TraceInfo(OutputFormat, "Is64BitOperatingSystem:", Environment.Is64BitOperatingSystem);
             RelayTraceSource.TraceInfo(OutputFormat, "CLR Version:", Environment.Version);

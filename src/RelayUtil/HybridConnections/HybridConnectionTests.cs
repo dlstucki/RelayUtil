@@ -31,6 +31,7 @@ namespace RelayUtil.HybridConnections
             HybridConnectionListener listener = null;
             bool createdHybridConnection = false;
             int returnCode = 0;
+            var testResults = new List<TestResult>();
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(70));
             try
             {
@@ -47,19 +48,19 @@ namespace RelayUtil.HybridConnections
                 {
                     client.DefaultRequestHeaders.ExpectContinue = false;
 
-                    await RunTestAsync("TestPostLargeRequestSmallResponse", () => TestPostLargeRequestSmallResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestPostLargeRequestWithLargeResponse", () => TestPostLargeRequestWithLargeResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestGetLargeResponse", () => TestGetLargeResponse(listener, token, client, traceSource));
-                    await RunTestAsync("TestGetSmallResponse", () => TestGetSmallResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestPostLargeRequestSmallResponse", null, testResults, () => TestPostLargeRequestSmallResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestPostLargeRequestWithLargeResponse", null, testResults, () => TestPostLargeRequestWithLargeResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestGetLargeResponse", null, testResults, () => TestGetLargeResponse(listener, token, client, traceSource));
+                    await RunTestAsync("TestGetSmallResponse", null, testResults, () => TestGetSmallResponse(listener, token, client, traceSource));
                 }
 
-                await RunTestAsync("TestStreaming", () => TestStreaming(listener, connectionString, traceSource));
+                await RunTestAsync("TestStreaming", null, testResults, () => TestStreaming(listener, connectionString, traceSource));
 
-                //traceSource.TraceEvent(TraceEventType.Information, (int)ConsoleColor.Green, "All tests succeeded");
+                returnCode = ReportTestResults(testResults);
             }
             catch (Exception exception)
             {
-                traceSource.TraceError("FAILED");
+                traceSource.TraceError("FAILURE WHILE RUNNING TESTS");
                 RelayTraceSource.TraceException(exception, nameof(HybridConnectionTests));
                 returnCode = exception.HResult;
             }
