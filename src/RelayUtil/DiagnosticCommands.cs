@@ -118,7 +118,7 @@ namespace RelayUtil
                 return;
             }
 
-            RelayTraceSource.TraceInfo(await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.ServiceNamespace));
+            RelayTraceSource.TraceInfo(await NetworkUtility.VerifyRelayPortsAsync(namespaceDetails.ServiceNamespace, Enumerable.Range(9400, gatewayCount)));
 
             var tasks = new List<Task<string>>();
             for (int i = 0; i < gatewayCount; i++)

@@ -6,6 +6,7 @@ namespace RelayUtil
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Linq;
     using System.Net;
     using System.Net.Sockets;
     using System.Text;
@@ -18,7 +19,7 @@ namespace RelayUtil
             80, 443, 5671, 9350, 9351, 9352, 9353, 9354
         };
 
-        public static async Task<string> VerifyRelayPortsAsync(string hostName)
+        public static async Task<string> VerifyRelayPortsAsync(string hostName, IEnumerable<int> extraPorts = null)
         {
             var stringBuilder = new StringBuilder();
             stringBuilder.AppendLine($"Checking {hostName} ");
@@ -26,9 +27,10 @@ namespace RelayUtil
             {
                 IPHostEntry ipHostEntry = await Dns.GetHostEntryAsync(hostName);
                 var tasks = new List<Task<string>>();
+                IEnumerable<int> ports = extraPorts != null ? RelayPorts.Union(extraPorts) : RelayPorts;
                 foreach (var address in ipHostEntry.AddressList)
                 {
-                    foreach (int port in RelayPorts)
+                    foreach (int port in ports)
                     {
                         var ipEndpoint = new IPEndPoint(address, port);
                         tasks.Add(ProbeTcpPortAsync(ipEndpoint));
