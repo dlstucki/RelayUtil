@@ -27,7 +27,7 @@ namespace RelayUtil
     {
         internal const string DefaultSuffix = "servicebus.windows.net";
         internal const int MaxGatewayInstanceCount = 64;
-        static readonly Regex NamespacePrefixRegex = new Regex("(ns-sb2-|ns-sbeh-|ns-eh2-)", RegexOptions.IgnoreCase);
+        static readonly Regex NamespacePrefixRegex = new Regex("(ns-sb2-|ns-sbeh-|ns-eh2-|ns-)", RegexOptions.IgnoreCase);
         static readonly Regex DeploymentRegex = new Regex(@"^[\w]*(PROD|PPE|INT|BVT)[\w]*-[\w]{3,}-\d{3,}$", RegexOptions.IgnoreCase);
 
         internal static async Task<NamespaceDetails> GetNamespaceDetailsAsync(string serviceNamespace)

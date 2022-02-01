@@ -64,7 +64,7 @@ namespace RelayUtil
                     ConfigureSecurityProtocol(protocolOption);
 
                     bool defaultOptions = !allOption.HasValue() && !namespaceOption.HasValue() && !netStatOption.HasValue() &&
-                        !portsOption.HasValue() && !instancePortsOption.HasValue() && !osOption.HasValue();
+                        !portsOption.HasValue() && !osOption.HasValue();
 
                     // Run netstat before we try to lookup the namespace to keep ourself out of the results
                     // NetStat output isn't part of the default run, must specify --netstat or --all
