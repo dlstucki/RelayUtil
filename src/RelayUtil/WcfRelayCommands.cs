@@ -234,7 +234,7 @@ namespace RelayUtil.WcfRelays
                     {
                         var namespaceManager = NamespaceManager.CreateFromConnectionString(connectionString);
                         namespaceManager.Settings.OperationTimeout = TimeSpan.FromSeconds(5);
-                        if (namespaceManager.RelayExists(path))
+                        if (!string.IsNullOrEmpty(path) && namespaceManager.RelayExists(path))
                         {
                             dynamic dynamicBinding = binding;
                             dynamicBinding.IsDynamic = false;

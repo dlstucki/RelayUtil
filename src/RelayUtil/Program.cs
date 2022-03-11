@@ -41,6 +41,7 @@ namespace RelayUtil
                 DiagnosticCommands.ConfigureCommands(app);
                 WcfRelayCommands.ConfigureCommands(app);
                 HybridConnectionCommands.ConfigureCommands(app);
+                SharedAccessSignatureCommands.ConfigureCommands(app);
 
                 return app.Execute(args);
             }

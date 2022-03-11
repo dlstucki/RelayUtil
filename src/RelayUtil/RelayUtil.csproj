@@ -70,6 +70,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="SharedAccessSignatureCommands.cs" />
     <Compile Include="Utilities\ColorConsole.cs" />
     <Compile Include="CommandStrings.cs" />
     <Compile Include="RelayCommandLineApplicationExtensions.cs" />
